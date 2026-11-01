@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Web</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f5f5f5; height: 100vh; display: flex; flex-direction: column; }
+  #chat { flex: 1; overflow-y: auto; padding: 20px; max-width: 800px; margin: 0 auto; width: 100%; }
+  .msg { margin-bottom: 16px; display: flex; }
+  .msg.user { justify-content: flex-end; }
+  .bubble { max-width: 75%; padding: 12px 16px; border-radius: 12px; line-height: 1.6; font-size: 15px; white-space: pre-wrap; }
+  .msg.user .bubble { background: #1a73e8; color: #fff; }
+  .msg.assistant .bubble { background: #fff; color: #1a1a1a; box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+  .msg.system .bubble { background: #fff3cd; color: #856404; font-size: 13px; }
+  #input-bar { padding: 16px; background: #fff; border-top: 1px solid #e0e0e0; }
+  #input-form { max-width: 800px; margin: 0 auto; display: flex; gap: 8px; }
+  #input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 24px; font-size: 15px; outline: none; }
+  #input:focus { border-color: #1a73e8; }
+  button { padding: 12px 24px; background: #1a73e8; color: #fff; border: none; border-radius: 24px; font-size: 15px; cursor: pointer; }
+  button:disabled { background: #aaa; }
+</style>
+</head>
+<body>
+<div id="chat">
+  <div class="msg system"><div class="bubble">已连接到 Hermes Agent (localhost:8642)</div></div>
+</div>
+<div id="input-bar">
+  <form id="input-form">
+    <input id="input" type="text" placeholder="跟 Hermes 说点什么..." autocomplete="off" autofocus>
+    <button type="submit" id="send-btn">发送</button>
+  </form>
+</div>
+<script>
+const API_URL = "http://192.168.1.105:8642/v1/chat/completions";
+const API_KEY = "my-secret-123";
+const chat = document.getElementById("chat");
+const form = document.getElementById("input-form");
+const input = document.getElementById("input");
+const btn = document.getElementById("send-btn");
+
+function addMsg(role, text) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  div.innerHTML = '<div class="bubble"></div>';
+  div.querySelector(".bubble").textContent = text;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return div.querySelector(".bubble");
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  addMsg("user", text);
+  input.value = "";
+  btn.disabled = true;
+
+  const bubble = addMsg("assistant", "");
+  let fullText = "";
+
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + API_KEY
+      },
+      body: JSON.stringify({
+        model: "hermes-agent",
+        messages: [{ role: "user", content: text }],
+        stream: true
+      })
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n");
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") continue;
+        try {
+          const json = JSON.parse(data);
+          const delta = json.choices?.[0]?.delta?.content;
+          if (delta) {
+            fullText += delta;
+            bubble.textContent = fullText;
+            chat.scrollTop = chat.scrollHeight;
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (err) {
+    bubble.textContent = "错误: " + err.message;
+  }
+  btn.disabled = false;
+  input.focus();
+});
+</script>
+</body>
+</html>
