@@ -7,88 +7,418 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-         background: #f5f5f5; height: 100vh; display: flex; flex-direction: column; }
-  #topbar { background: #fff; border-bottom: 1px solid #e0e0e0; }
-  #topbar-inner { max-width: 800px; margin: 0 auto; padding: 8px 20px; display: flex; justify-content: flex-end; }
-  #new-chat { padding: 8px 16px; font-size: 14px; border-radius: 16px; background: #f0f0f0; color: #333; }
-  #new-chat:hover { background: #e6e6e6; }
-  #chat { flex: 1; overflow-y: auto; padding: 20px; max-width: 800px; margin: 0 auto; width: 100%; }
+         background: #f5f5f5; height: 100vh; display: flex; overflow: hidden; }
+
+  /* ---------- 左侧栏 ---------- */
+  #sidebar { width: 260px; background: #fafafa; border-right: 1px solid #e0e0e0;
+             display: flex; flex-direction: column; transition: width .2s; flex-shrink: 0; }
+  #sidebar.collapsed { width: 0; border-right: none; overflow: hidden; }
+  #sidebar-head { padding: 12px; border-bottom: 1px solid #e0e0e0; }
+  #new-ws { width: 100%; padding: 10px; font-size: 14px; border-radius: 8px;
+            background: #1a73e8; color: #fff; border: none; cursor: pointer; }
+  #new-ws:hover { background: #1557b0; }
+  #ws-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .ws-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px;
+             font-size: 14px; color: #333; display: flex; justify-content: space-between;
+             align-items: center; gap: 8px; }
+  .ws-item:hover { background: #ececec; }
+  .ws-item.active { background: #e3f0fd; color: #1a73e8; font-weight: 500; }
+  .ws-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-del { opacity: 0; color: #999; font-size: 16px; line-height: 1; padding: 2px 4px;
+            border-radius: 4px; background: none; border: none; cursor: pointer; flex-shrink: 0; }
+  .ws-item:hover .ws-del { opacity: 1; }
+  .ws-del:hover { background: #ffdddd; color: #d32f2f; }
+  .ws-empty { padding: 20px 12px; text-align: center; color: #999; font-size: 13px; }
+
+  /* ---------- 左下角设置 ---------- */
+  #sidebar-foot { border-top: 1px solid #e0e0e0; padding: 8px; position: relative; flex-shrink: 0; }
+  #gear-btn { width: 100%; padding: 10px 12px; background: none; border: none;
+              border-radius: 8px; cursor: pointer; display: flex; align-items: center;
+              gap: 8px; font-size: 14px; color: #666; text-align: left; font-family: inherit; }
+  #gear-btn:hover { background: #ececec; }
+  #gear-btn .gear-icon { font-size: 17px; line-height: 1; }
+
+  #settings-pop { position: absolute; left: 8px; right: 8px; bottom: 56px;
+                  background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
+                  box-shadow: 0 4px 16px rgba(0,0,0,.12); padding: 6px;
+                  display: none; z-index: 60; }
+  #settings-pop.show { display: block; }
+  .set-row { padding: 10px 12px; border-radius: 6px; cursor: pointer; font-size: 14px;
+             color: #333; display: flex; justify-content: space-between;
+             align-items: center; gap: 8px; }
+  .set-row:hover { background: #f0f0f0; }
+  .set-row .arrow { color: #bbb; font-size: 13px; }
+  .set-row .sub { color: #999; font-size: 12px; }
+
+  /* ---------- 主区 ---------- */
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #topbar { background: #fff; border-bottom: 1px solid #e0e0e0; display: flex;
+            align-items: center; padding: 8px 16px; gap: 12px; }
+  #toggle-sidebar { background: none; border: none; font-size: 20px; cursor: pointer;
+                    color: #666; padding: 4px 8px; border-radius: 6px; }
+  #toggle-sidebar:hover { background: #f0f0f0; }
+  #topbar-title { font-size: 15px; color: #333; font-weight: 500;
+                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  #chat { flex: 1; overflow-y: auto; padding: 20px; }
+  #chat-inner { max-width: 800px; margin: 0 auto; width: 100%; }
   .msg { margin-bottom: 16px; display: flex; }
   .msg.user { justify-content: flex-end; }
-  .bubble { max-width: 75%; padding: 12px 16px; border-radius: 12px; line-height: 1.6; font-size: 15px; white-space: pre-wrap; }
+  .bubble { max-width: 80%; padding: 12px 16px; border-radius: 12px; line-height: 1.6;
+            font-size: 15px; white-space: pre-wrap; word-break: break-word; }
   .msg.user .bubble { background: #1a73e8; color: #fff; }
   .msg.assistant .bubble { background: #fff; color: #1a1a1a; box-shadow: 0 1px 2px rgba(0,0,0,.1); }
   .msg.system .bubble { background: #fff3cd; color: #856404; font-size: 13px; }
+  .tool-card { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px;
+               padding: 8px 12px; margin-bottom: 8px; font-size: 13px; color: #666; }
+  .tool-card.done { border-color: #c8e6c9; background: #f1f8f4; }
+  .tool-card.fail { border-color: #ffcdd2; background: #fff5f5; color: #c62828; }
+
   #input-bar { padding: 16px; background: #fff; border-top: 1px solid #e0e0e0; }
-  #input-form { max-width: 800px; margin: 0 auto; display: flex; gap: 8px; }
-  #input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 24px; font-size: 15px; outline: none; }
+  #input-inner { max-width: 800px; margin: 0 auto; display: flex; gap: 8px; }
+  #input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 24px;
+           font-size: 15px; outline: none; font-family: inherit; }
   #input:focus { border-color: #1a73e8; }
-  button { padding: 12px 24px; background: #1a73e8; color: #fff; border: none; border-radius: 24px; font-size: 15px; cursor: pointer; }
-  button:disabled { background: #aaa; }
+  #send-btn { padding: 12px 24px; background: #1a73e8; color: #fff; border: none;
+              border-radius: 24px; font-size: 15px; cursor: pointer; white-space: nowrap; }
+  #send-btn:disabled { background: #aaa; cursor: not-allowed; }
+  #send-btn.stop { background: #d32f2f; }
+
+  /* ---------- 配置面板 ---------- */
+  #cfg-mask { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none;
+              align-items: center; justify-content: center; z-index: 100; }
+  #cfg-mask.show { display: flex; }
+  #cfg { background: #fff; padding: 24px; border-radius: 12px; width: 90%; max-width: 420px; }
+  #cfg h2 { font-size: 17px; margin-bottom: 16px; }
+  #cfg label { display: block; font-size: 13px; color: #666; margin-bottom: 6px; margin-top: 12px; }
+  #cfg input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
+               font-size: 14px; outline: none; }
+  #cfg input:focus { border-color: #1a73e8; }
+  #cfg-note { font-size: 12px; color: #999; margin-top: 14px; line-height: 1.5; }
+  #cfg-btns { display: flex; gap: 8px; margin-top: 20px; }
+  #cfg-btns button { flex: 1; padding: 10px; font-size: 14px; border-radius: 8px;
+                     border: none; cursor: pointer; }
+  #cfg-save { background: #1a73e8; color: #fff; }
+  #cfg-cancel { background: #eee; color: #333; }
+
+  @media (max-width: 720px) {
+    #sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 50;
+               box-shadow: 2px 0 8px rgba(0,0,0,.1); width: 260px; }
+    #sidebar.collapsed { width: 0; box-shadow: none; }
+    .bubble { max-width: 88%; }
+  }
 </style>
 </head>
 <body>
-<header id="topbar"><div id="topbar-inner"><button id="new-chat" type="button">新对话</button></div></header>
-<div id="chat">
-</div>
-<div id="input-bar">
-  <form id="input-form">
-    <input id="input" type="text" placeholder="跟 Hermes 说点什么..." autocomplete="off" autofocus>
-    <button type="submit" id="send-btn">发送</button>
-  </form>
-</div>
-<script>
-const API_URL = `http://${window.location.hostname}:8642/v1/chat/completions`;
-const API_KEY = "my-secret-123";
-const chat = document.getElementById("chat");
-const form = document.getElementById("input-form");
-const input = document.getElementById("input");
-const btn = document.getElementById("send-btn");
-const newChatBtn = document.getElementById("new-chat");
 
-function newChat() {
-  chat.innerHTML = "";
-  input.value = "";
-  btn.disabled = false;
-  input.focus();
+<aside id="sidebar">
+  <div id="sidebar-head">
+    <button id="new-ws" type="button">+ 新建工作区</button>
+  </div>
+  <div id="ws-list"></div>
+
+  <div id="sidebar-foot">
+    <div id="settings-pop">
+      <div class="set-row" id="row-key">
+        <span>密钥</span>
+        <span class="arrow">›</span>
+      </div>
+    </div>
+    <button id="gear-btn" type="button">
+      <span class="gear-icon">⚙</span><span>设置</span>
+    </button>
+  </div>
+</aside>
+
+<div id="main">
+  <header id="topbar">
+    <button id="toggle-sidebar" type="button" title="切换侧栏">☰</button>
+    <span id="topbar-title">Hermes Web</span>
+  </header>
+
+  <div id="chat"><div id="chat-inner"></div></div>
+
+  <div id="input-bar">
+    <div id="input-inner">
+      <input id="input" type="text" placeholder="跟 Hermes 说点什么..." autocomplete="off">
+      <button id="send-btn" type="button">发送</button>
+    </div>
+  </div>
+</div>
+
+<div id="cfg-mask">
+  <div id="cfg">
+    <h2 id="cfg-title">修改密钥</h2>
+    <label>API Key</label>
+    <input id="cfg-key" type="password" placeholder="API_SERVER_KEY 的值">
+    <div id="cfg-note">
+      此页面的 Key 对所有能打开它的人可见，仅限可信局域网使用。
+      配置保存在本机浏览器，不会上传。
+    </div>
+    <div id="cfg-btns">
+      <button id="cfg-cancel" type="button">取消</button>
+      <button id="cfg-save" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ============ 配置 ============
+const CFG_KEY = "hermes.cfg";
+const CUR_WS = "hermes.currentWs";
+
+function loadCfg() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CFG_KEY) || "null");
+    if (c && c.base && c.key) return c;
+  } catch (e) {}
+  return null;
+}
+function saveCfg(c) { localStorage.setItem(CFG_KEY, JSON.stringify(c)); }
+
+// 地址固定：同源 + 由 server.py 代理到 8642
+const API_BASE = "";
+
+let cfg = loadCfg();
+
+// ============ DOM ============
+const chatInner = document.getElementById("chat-inner");
+const chat = document.getElementById("chat");
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send-btn");
+const wsList = document.getElementById("ws-list");
+const newWsBtn = document.getElementById("new-ws");
+const sidebar = document.getElementById("sidebar");
+const toggleBtn = document.getElementById("toggle-sidebar");
+const topbarTitle = document.getElementById("topbar-title");
+const cfgMask = document.getElementById("cfg-mask");
+
+// ============ 状态 ============
+let sessions = [];        // 会话列表
+let currentId = localStorage.getItem(CUR_WS) || null;
+let controller = null;    // AbortController
+
+// ============ 工具函数 ============
+function api(path, opts = {}) {
+  return fetch(API_BASE + path, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + ((cfg && cfg.key) || ""),
+      ...(opts.headers || {})
+    }
+  });
 }
 
-newChatBtn.addEventListener("click", newChat);
+function showError(msg) {
+  addMsg("system", msg);
+}
 
+function fmtTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+// ============ 消息渲染 ============
 function addMsg(role, text) {
   const div = document.createElement("div");
   div.className = "msg " + role;
-  div.innerHTML = '<div class="bubble"></div>';
-  div.querySelector(".bubble").textContent = text;
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
-  return div.querySelector(".bubble");
+  const b = document.createElement("div");
+  b.className = "bubble";
+  b.textContent = text;
+  div.appendChild(b);
+  chatInner.appendChild(div);
+  scrollBottom();
+  return b;
 }
 
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const text = input.value.trim();
-  if (!text) return;
-  addMsg("user", text);
-  input.value = "";
-  btn.disabled = true;
+function addToolCard(name, preview) {
+  const div = document.createElement("div");
+  div.className = "tool-card";
+  div.textContent = `⚙ ${name}${preview ? "：" + preview : ""}`;
+  chatInner.appendChild(div);
+  scrollBottom();
+  return div;
+}
 
-  const bubble = addMsg("assistant", "");
-  let fullText = "";
+function scrollBottom(force) {
+  if (force !== false) {
+    const near = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 200;
+    if (near) chat.scrollTop = chat.scrollHeight;
+  }
+}
+
+// ============ 会话列表 ============
+async function loadSessions() {
+  if (!cfg) { renderWsList(); return; }
+  try {
+    const res = await api("/api/sessions?limit=50");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const json = await res.json();
+    sessions = json.data || [];
+  } catch (e) {
+    sessions = [];
+  }
+  renderWsList();
+}
+
+function renderWsList() {
+  wsList.innerHTML = "";
+  const visible = sessions.filter(s => s.source === "api_server" || !s.source);
+  if (!visible.length) {
+    wsList.innerHTML = '<div class="ws-empty">还没有工作区<br>点上方按钮新建</div>';
+    return;
+  }
+  for (const s of visible) {
+    const item = document.createElement("div");
+    item.className = "ws-item" + (s.id === currentId ? " active" : "");
+    item.dataset.id = s.id;
+
+    const title = document.createElement("span");
+    title.className = "ws-title";
+    title.textContent = s.title || s.preview || "未命名";
+
+    const del = document.createElement("button");
+    del.className = "ws-del";
+    del.type = "button";
+    del.textContent = "×";
+    del.title = "删除";
+    del.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      if (!confirm(`删除「${title.textContent}」？`)) return;
+      await deleteSession(s.id);
+    });
+
+    item.appendChild(title);
+    item.appendChild(del);
+    item.addEventListener("click", () => switchSession(s.id));
+    wsList.appendChild(item);
+  }
+}
+
+async function deleteSession(id) {
+  try {
+    const res = await api("/api/sessions/" + encodeURIComponent(id), { method: "DELETE" });
+    if (!res.ok && res.status !== 404) throw new Error("HTTP " + res.status);
+  } catch (e) {
+    showError("删除失败：" + e.message);
+    return;
+  }
+  if (id === currentId) {
+    currentId = null;
+    localStorage.removeItem(CUR_WS);
+    chatInner.innerHTML = "";
+    topbarTitle.textContent = "Hermes Web";
+  }
+  await loadSessions();
+}
+
+// ============ 切换 / 新建会话 ============
+async function switchSession(id) {
+  if (controller) { controller.abort(); controller = null; }
+  currentId = id;
+  localStorage.setItem(CUR_WS, id);
+  chatInner.innerHTML = "";
+  renderWsList();
+
+  const s = sessions.find(x => x.id === id);
+  topbarTitle.textContent = (s && (s.title || s.preview)) || "工作区";
 
   try {
-    const res = await fetch(API_URL, {
+    const res = await api("/api/sessions/" + encodeURIComponent(id) + "/messages");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const json = await res.json();
+    for (const m of (json.data || [])) {
+      if (m.role === "user" || m.role === "assistant") {
+        if (m.content && String(m.content).trim()) addMsg(m.role, m.content);
+      } else if (m.role === "tool") {
+        // 工具结果不显示正文，避免刷屏
+      }
+    }
+  } catch (e) {
+    showError("加载历史失败：" + e.message);
+  }
+  scrollBottom();
+
+  if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
+}
+
+async function createWorkspace() {
+  if (!cfg) { openCfg(); return; }
+  try {
+    const res = await api("/api/sessions", { method: "POST", body: JSON.stringify({}) });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const json = await res.json();
+    await loadSessions();
+    await switchSession(json.session.id);
+    input.focus();
+  } catch (e) {
+    showError("新建工作区失败：" + e.message);
+  }
+}
+
+// ============ 发消息 ============
+function setBusy(busy) {
+  if (busy) {
+    sendBtn.textContent = "停止";
+    sendBtn.classList.add("stop");
+    sendBtn.disabled = false;
+  } else {
+    sendBtn.textContent = "发送";
+    sendBtn.classList.remove("stop");
+    sendBtn.disabled = false;
+  }
+}
+
+async function ensureSession(firstText) {
+  if (currentId) return currentId;
+  // 没有会话就建一个，标题用首条消息前 20 字
+  const title = firstText.slice(0, 20);
+  const res = await api("/api/sessions", {
+    method: "POST",
+    body: JSON.stringify({ title })
+  });
+  if (!res.ok) throw new Error("无法创建会话 HTTP " + res.status);
+  const json = await res.json();
+  currentId = json.session.id;
+  localStorage.setItem(CUR_WS, currentId);
+  topbarTitle.textContent = title;
+  return currentId;
+}
+
+async function sendMessage(text) {
+  addMsg("user", text);
+  input.value = "";
+  setBusy(true);
+
+  let toolCard = null;
+
+  try {
+    const sid = await ensureSession(text);
+
+    controller = new AbortController();
+    const res = await api(`/api/sessions/${encodeURIComponent(sid)}/chat/stream`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + API_KEY
-      },
-      body: JSON.stringify({
-        model: "hermes-agent",
-        messages: [{ role: "user", content: text }],
-        stream: true
-      })
+      body: JSON.stringify({ message: text }),
+      signal: controller.signal
     });
+
+    if (!res.ok) {
+      let detail = "";
+      try { detail = (await res.json()).error?.message || ""; } catch (e) {}
+      throw new Error("HTTP " + res.status + (detail ? " - " + detail : ""));
+    }
+
+    const bubble = addMsg("assistant", "");
+    let fullText = "";
+    let buf = "";
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -96,29 +426,159 @@ form.addEventListener("submit", async (e) => {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split("\n");
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") continue;
-        try {
-          const json = JSON.parse(data);
-          const delta = json.choices?.[0]?.delta?.content;
-          if (delta) {
-            fullText += delta;
-            bubble.textContent = fullText;
-            chat.scrollTop = chat.scrollHeight;
-          }
-        } catch (e) {}
+      buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) !== -1) {
+        const raw = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+
+        let evName = "message", evData = "";
+        for (const line of raw.split("\n")) {
+          if (line.startsWith("event:")) evName = line.slice(6).trim();
+          else if (line.startsWith("data:")) evData += line.slice(5).trim();
+        }
+        if (!evData) continue;
+
+        let ev;
+        try { ev = JSON.parse(evData); } catch (e) { continue; }
+
+        if (evName === "assistant.delta" && ev.delta) {
+          fullText += ev.delta;
+          bubble.textContent = fullText;
+          scrollBottom();
+        } else if (evName === "tool.started") {
+          if (!toolCard) toolCard = addToolCard("正在调用 " + (ev.tool_name || "工具"), ev.preview);
+        } else if (evName === "tool.completed") {
+          if (toolCard) { toolCard.classList.add("done"); toolCard.textContent = `✓ ${ev.tool_name || "工具"}`; toolCard = null; }
+        } else if (evName === "tool.failed") {
+          if (toolCard) { toolCard.classList.add("fail"); toolCard.textContent = `✗ ${ev.tool_name || "工具"} 失败`; toolCard = null; }
+        } else if (evName === "assistant.completed" && ev.content) {
+          if (ev.content !== fullText) { fullText = ev.content; bubble.textContent = fullText; }
+        } else if (evName === "error") {
+          throw new Error(ev.message || "服务器错误");
+        }
       }
     }
+
+    if (!fullText) bubble.textContent = "（无回复）";
+
+    // 首轮对话后把标题补上
+    const s = sessions.find(x => x.id === sid);
+    if (s && !s.title) {
+      try {
+        await api("/api/sessions/" + encodeURIComponent(sid), {
+          method: "PATCH",
+          body: JSON.stringify({ title: text.slice(0, 20) })
+        });
+      } catch (e) {}
+      topbarTitle.textContent = text.slice(0, 20);
+    }
+
   } catch (err) {
-    bubble.textContent = "错误: " + err.message;
+    if (err.name === "AbortError") {
+      addMsg("system", "已停止生成");
+    } else if (String(err.message).includes("Failed to fetch")) {
+      addMsg("system",
+        "无法连接到服务器。\n\n请确认：\n" +
+        "1. gateway 是否在运行（双击 start.bat）\n" +
+        "2. server.py 代理是否在运行（端口 3000）\n" +
+        "3. 手机和电脑是否在同一 WiFi");
+    } else {
+      addMsg("system", "错误：" + err.message);
+    }
+  } finally {
+    controller = null;
+    setBusy(false);
+    input.focus();
+    loadSessions();
   }
-  btn.disabled = false;
-  input.focus();
+}
+
+// ============ 事件绑定 ============
+sendBtn.addEventListener("click", () => {
+  if (controller) { controller.abort(); return; }
+  const text = input.value.trim();
+  if (!text) return;
+  if (!cfg) { openCfg(); return; }
+  sendMessage(text);
 });
+
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    sendBtn.click();
+  }
+});
+
+newWsBtn.addEventListener("click", createWorkspace);
+
+toggleBtn.addEventListener("click", () => {
+  sidebar.classList.toggle("collapsed");
+});
+
+// ============ 密钥弹窗 ============
+function openCfg() {
+  document.getElementById("cfg-key").value = (cfg && cfg.key) || "";
+  cfgMask.classList.add("show");
+  setTimeout(() => document.getElementById("cfg-key").focus(), 50);
+}
+
+function closeCfg() { cfgMask.classList.remove("show"); }
+
+document.getElementById("cfg-save").addEventListener("click", async () => {
+  const key = document.getElementById("cfg-key").value.trim();
+  if (!key) { alert("请填写密钥"); return; }
+
+  cfg = { key };
+  saveCfg(cfg);
+  closeCfg();
+  closeSettings();
+  await loadSessions();
+  if (currentId) switchSession(currentId);
+});
+
+document.getElementById("cfg-cancel").addEventListener("click", closeCfg);
+
+// ============ 左下角设置菜单 ============
+const settingsPop = document.getElementById("settings-pop");
+const gearBtn = document.getElementById("gear-btn");
+
+function openSettings() { settingsPop.classList.add("show"); }
+function closeSettings() { settingsPop.classList.remove("show"); }
+function toggleSettings() {
+  if (settingsPop.classList.contains("show")) closeSettings();
+  else openSettings();
+}
+
+gearBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleSettings();
+});
+
+document.getElementById("row-key").addEventListener("click", () => {
+  closeSettings();
+  openCfg();
+});
+
+// 点空白处关闭菜单
+document.addEventListener("click", (e) => {
+  if (!settingsPop.contains(e.target) && e.target !== gearBtn && !gearBtn.contains(e.target)) {
+    closeSettings();
+  }
+});
+
+// ============ 启动 ============
+(async function init() {
+  if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
+  if (!cfg) { openCfg(); return; }
+  await loadSessions();
+  if (currentId) {
+    const exists = sessions.some(s => s.id === currentId);
+    if (exists) await switchSession(currentId);
+    else { currentId = null; localStorage.removeItem(CUR_WS); }
+  }
+})();
 </script>
 </body>
 </html>
