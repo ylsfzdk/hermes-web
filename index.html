@@ -101,6 +101,47 @@
   #cfg-save { background: #1a73e8; color: #fff; }
   #cfg-cancel { background: #eee; color: #333; }
 
+  /* ---------- 模型切换弹窗 ---------- */
+  #model-mask { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none;
+                align-items: center; justify-content: center; z-index: 110; }
+  #model-mask.show { display: flex; }
+  #model-box { background: #fff; padding: 24px; border-radius: 12px; width: 90%; max-width: 420px; }
+  #model-box h2 { font-size: 17px; margin-bottom: 16px; }
+  #model-provider, #model-select, #model-key, #model-base { width: 100%; padding: 10px 12px; font-size: 14px;
+                    border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px;
+                    background: #fff; color: #333; box-sizing: border-box; }
+  .mf-label { display: block; font-size: 12px; color: #888; margin-bottom: 6px; }
+  .mf-gap { height: 12px; }
+
+  /* 供应商 / 模型两行共用的浮层下拉结构 */
+  #model-provider-wrap, #model-select-wrap { position: relative; }
+  #model-provider, #model-select { padding-right: 30px; margin-bottom: 0; }
+  #provider-arrow, #model-arrow { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+                    display: flex; align-items: center; justify-content: center;
+                    margin: 0; padding: 0; background: none; border: none;
+                    color: #888; font-size: 12px; line-height: 1;
+                    cursor: pointer; user-select: none;
+                    /* 放大点击热区，否则纯箭头太小点不中 */
+                    width: 24px; height: 28px; z-index: 2; }
+  #provider-arrow:hover, #model-arrow:hover { color: #1a73e8; }
+  #provider-pop, #model-pop { position: absolute; left: 0; right: 0; top: 100%; margin-top: 4px;
+                  background: #fff; border: 1px solid #ddd; border-radius: 8px;
+                  box-shadow: 0 6px 20px rgba(0,0,0,.12); max-height: 220px; overflow-y: auto;
+                  display: none; z-index: 130; }
+  #provider-pop.show, #model-pop.show { display: block; }
+  .prov-opt { padding: 9px 12px; font-size: 14px; color: #333; cursor: pointer;
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prov-opt:hover, .prov-opt.active { background: #f0f5ff; }
+  .prov-opt.sel { color: #1a73e8; font-weight: 500; }
+  .prov-empty { padding: 10px 12px; font-size: 13px; color: #aaa; }
+  #model-btns { display: flex; gap: 8px; margin-top: 20px; }
+  #model-cancel, #model-confirm { flex: 1; padding: 10px; font-size: 14px; border-radius: 8px;
+                  border: none; cursor: pointer; }
+  #model-cancel { background: #eee; color: #333; }
+  #model-confirm { background: #1a73e8; color: #fff; }
+  #model-confirm:disabled { opacity: .5; cursor: default; }
+  .sub.warn { color: #d32f2f; }
+
   @media (max-width: 720px) {
     #sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 50;
                box-shadow: 2px 0 8px rgba(0,0,0,.1); width: 260px; }
@@ -119,6 +160,10 @@
 
   <div id="sidebar-foot">
     <div id="settings-pop">
+      <div class="set-row" id="row-model">
+        <span>模型</span>
+        <span class="sub" id="model-name">加载中…</span>
+      </div>
       <div class="set-row" id="row-key">
         <span>密钥</span>
         <span class="arrow">›</span>
@@ -162,6 +207,33 @@
   </div>
 </div>
 
+<div id="model-mask">
+  <div id="model-box">
+    <h2>切换模型</h2>
+    <label class="mf-label">供应商</label>
+    <div id="model-provider-wrap">
+      <input id="model-provider" type="text" autocomplete="off" placeholder="输入名称筛选，或从下拉里选">
+      <span id="provider-arrow" title="展开供应商列表">▼</span>
+      <div id="provider-pop"></div>
+    </div>
+    <div class="mf-gap"></div>
+    <label class="mf-label">模型</label>
+    <div id="model-select-wrap">
+      <input id="model-select" type="text" autocomplete="off" placeholder="输入名称筛选，或从下拉里选">
+      <span id="model-arrow" title="展开模型列表">▼</span>
+      <div id="model-pop"></div>
+    </div>
+    <label class="mf-label">API Key（留空则沿用供应商已保存的密钥）</label>
+    <input id="model-key" type="password" autocomplete="off" placeholder="sk-...">
+    <label class="mf-label">API 地址（留空则不修改）</label>
+    <input id="model-base" type="text" autocomplete="off" placeholder="https://.../v1">
+    <div id="model-btns">
+      <button id="model-confirm" type="button">确认</button>
+      <button id="model-cancel" type="button">取消</button>
+    </div>
+  </div>
+</div>
+
 <script>
 "use strict";
 
@@ -172,7 +244,7 @@ const CUR_WS = "hermes.currentWs";
 function loadCfg() {
   try {
     const c = JSON.parse(localStorage.getItem(CFG_KEY) || "null");
-    if (c && c.base && c.key) return c;
+    if (c && c.key) return c;
   } catch (e) {}
   return null;
 }
@@ -463,16 +535,26 @@ async function sendMessage(text) {
 
     if (!fullText) bubble.textContent = "（无回复）";
 
-    // 首轮对话后把标题补上
+    // 首轮对话后把标题补上。
+    // 网关要求标题全局唯一，消息前缀很容易重名（连发两次"测试"就撞），
+    // 所以重名时追加序号重试。
     const s = sessions.find(x => x.id === sid);
     if (s && !s.title) {
-      try {
-        await api("/api/sessions/" + encodeURIComponent(sid), {
-          method: "PATCH",
-          body: JSON.stringify({ title: text.slice(0, 20) })
-        });
-      } catch (e) {}
-      topbarTitle.textContent = text.slice(0, 20);
+      const base = (text.trim() || "会话").slice(0, 20);
+      let title = base;
+      for (let n = 1; n <= 9; n++) {
+        try {
+          const res = await api("/api/sessions/" + encodeURIComponent(sid), {
+            method: "PATCH",
+            body: JSON.stringify({ title })
+          });
+          if (res.ok) break;
+        } catch (e) { break; }
+        title = base + " (" + (n + 1) + ")";
+      }
+      if (s) s.title = title;
+      topbarTitle.textContent = title;
+      await loadSessions();
     }
 
   } catch (err) {
@@ -544,7 +626,11 @@ document.getElementById("cfg-cancel").addEventListener("click", closeCfg);
 const settingsPop = document.getElementById("settings-pop");
 const gearBtn = document.getElementById("gear-btn");
 
-function openSettings() { settingsPop.classList.add("show"); }
+function openSettings() {
+  settingsPop.classList.add("show");
+  // 只在第一次打开时拉取，之后靠切换模型成功后刷新
+  if (!modelInfo) loadModelInfo();
+}
 function closeSettings() { settingsPop.classList.remove("show"); }
 function toggleSettings() {
   if (settingsPop.classList.contains("show")) closeSettings();
@@ -561,6 +647,11 @@ document.getElementById("row-key").addEventListener("click", () => {
   openCfg();
 });
 
+document.getElementById("row-model").addEventListener("click", () => {
+  closeSettings();
+  openModelPicker();
+});
+
 // 点空白处关闭菜单
 document.addEventListener("click", (e) => {
   if (!settingsPop.contains(e.target) && e.target !== gearBtn && !gearBtn.contains(e.target)) {
@@ -568,9 +659,297 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// ============ 模型管理 ============
+const modelMask = document.getElementById("model-mask");
+const modelNameEl = document.getElementById("model-name");
+let modelInfo = null;
+
+async function loadModelInfo() {
+  try {
+    const res = await fetch("/_model", { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    modelInfo = await res.json();
+    modelNameEl.textContent = modelInfo.current || "未知";
+    modelNameEl.classList.remove("warn");
+  } catch (e) {
+    modelNameEl.textContent = "读取失败";
+    modelNameEl.classList.add("warn");
+  }
+}
+
+function openModelPicker() {
+  const pinput = document.getElementById("model-provider");
+  document.getElementById("model-key").value = "";
+  document.getElementById("model-base").value = "";
+  document.getElementById("model-confirm").disabled = false;
+
+  if (!modelInfo) {
+    pinput.value = "正在读取…";
+    loadModelInfo().then(() => openModelPicker());
+    modelMask.classList.add("show");
+    return;
+  }
+
+  const providers = modelInfo.providers || [];
+  if (!providers.length) {
+    pinput.value = "";
+    pinput.placeholder = "没有可用的供应商列表";
+    modelMask.classList.add("show");
+    return;
+  }
+
+  // 默认停在当前供应商
+  pinput.value = modelInfo.provider || "";
+  provCombo.render();
+  renderModelList(pinput.value);
+  modelMask.classList.add("show");
+}
+
+// ---------- 浮层下拉：供应商和模型共用一套 ----------
+const POP_LIMIT = 200;
+
+// state: { input, pop, items: [], active: -1, filter(), onPick(value) }
+function makeCombo(input, pop, filter, onPick) {
+  // input 点击/聚焦不自动展开，只能由箭头(松开)展开或键盘↓展开
+  const st = { input, pop, items: [], active: -1, filter, onPick };
+
+  function show(v) { pop.classList.toggle("show", !!v); }
+  function render() {
+    st.items = filter(input.value.trim());
+    st.active = -1;
+    pop.innerHTML = "";
+    if (!st.items.length) {
+      const d = document.createElement("div");
+      d.className = "prov-empty";
+      d.textContent = "没有匹配项";
+      pop.appendChild(d);
+      return;
+    }
+    for (const it of st.items.slice(0, POP_LIMIT)) {
+      const d = document.createElement("div");
+      d.className = "prov-opt" + (it.cur ? " sel" : "");
+      d.textContent = it.label;
+      d.dataset.value = it.value;
+      // mousedown 阻止默认，保住输入框焦点（否则 blur 先把浮层关掉点不到），
+      // 选中动作放在 click 上：这才是"松开鼠标后"才发生
+      d.addEventListener("mousedown", (e) => e.preventDefault());
+      d.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onPick(it.value);
+        show(false);
+      });
+      pop.appendChild(d);
+    }
+    if (st.items.length > POP_LIMIT) {
+      const d = document.createElement("div");
+      d.className = "prov-empty";
+      d.textContent = "还有 " + (st.items.length - POP_LIMIT) + " 项，继续输入可缩小范围";
+      pop.appendChild(d);
+    }
+  }
+  function move(delta) {
+    const opts = [...pop.querySelectorAll(".prov-opt")];
+    if (!opts.length) return;
+    opts.forEach(o => o.classList.remove("active"));
+    st.active = (st.active + delta + opts.length) % opts.length;
+    opts[st.active].classList.add("active");
+    opts[st.active].scrollIntoView({ block: "nearest" });
+  }
+  function open() { render(); show(true); }
+
+  // 打字即按前缀过滤并弹出浮层；清空输入则收起
+  input.addEventListener("input", () => {
+    if (input.value.trim()) open();
+    else show(false);
+  });
+  input.addEventListener("focus", () => { if (input.value.trim()) open(); });
+  input.addEventListener("blur", () => show(false));
+  input.addEventListener("keydown", (e) => {
+    const isOpen = pop.classList.contains("show");
+    if (e.key === "ArrowDown") { e.preventDefault(); if (!isOpen) open(); move(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+    else if (e.key === "Enter" && isOpen && st.active >= 0) {
+      e.preventDefault();
+      const v = pop.querySelectorAll(".prov-opt")[st.active].dataset.value;
+      onPick(v);
+      show(false);
+    } else if (e.key === "Escape") { show(false); }
+  });
+
+  // 全局兜底：任何地方按下鼠标，若不是在本行内部，就收起浮层
+  // （比依赖 blur 可靠——箭头 mousedown 会 preventDefault，blur 不一定触发）
+  document.addEventListener("mousedown", (e) => {
+    if (!input.parentNode.contains(e.target) && !pop.contains(e.target)) show(false);
+  });
+
+  return { render, show, open, pop };
+}
+
+// 供应商行：选中后要填回输入框，再刷新模型行
+function setProvider(p) {
+  document.getElementById("model-provider").value = p;
+  renderModelList(p);
+  modelCombo.show(false);
+}
+
+// 供应商行
+const provCombo = makeCombo(
+  document.getElementById("model-provider"),
+  document.getElementById("provider-pop"),
+  (q) => (modelInfo ? modelInfo.providers || [] : [])
+    .filter(p => !q || p.toLowerCase().startsWith(q.toLowerCase()))
+    .map(p => ({ value: p, label: p, cur: modelInfo && p === modelInfo.provider })),
+  setProvider
+);
+
+// 模型行：选中后填回输入框
+const modelCombo = makeCombo(
+  document.getElementById("model-select"),
+  document.getElementById("model-pop"),
+  (q) => {
+    const all = modelNames(document.getElementById("model-provider").value.trim());
+    return all
+      .filter(m => !q || m.toLowerCase().includes(q.toLowerCase()))
+      .map(m => ({
+        value: m,
+        label: m + (m === currentModel() ? "  ✓ 当前" : ""),
+        cur: m === currentModel()
+      }));
+  },
+  (m) => { document.getElementById("model-select").value = m; }
+);
+
+function modelNames(provider) {
+  if (!modelInfo) return [];
+  const same = provider === modelInfo.provider;
+  const all = new Set((modelInfo.catalog || {})[provider] || []);
+  if (same && modelInfo.current) all.add(modelInfo.current);
+  return [...all];
+}
+function currentModel() {
+  const p = document.getElementById("model-provider").value.trim();
+  return modelInfo && p === modelInfo.provider ? modelInfo.current : null;
+}
+
+// 供应商变了：重填模型行的候选，并默认选中当前模型或第一个
+function renderModelList(provider) {
+  const minput = document.getElementById("model-select");
+  const all = modelNames(provider);
+  if (!all.length) {
+    minput.value = "";
+    minput.placeholder = "该供应商没有可用的模型列表";
+    return;
+  }
+  minput.placeholder = "输入名称筛选，或从下拉里选";
+  const cur = provider === modelInfo.provider ? modelInfo.current : null;
+  minput.value = all.includes(cur) ? cur : all[0];
+}
+
+// 箭头：按下只置标记，松开(mouseup)才展开/收起。
+// 全程 preventDefault，保证输入框不丢焦点、浮层不会因 blur 被立刻关掉。
+// 注意：pressed 检查要放在 preventDefault 之后、取 pop 之前，否则
+// 按住箭头拖到别处松开时 pressed=false，但仍会走到下面读 combo.pop 崩掉。
+function bindArrow(arrow, input, combo, pop) {
+  let pressed = false;
+  const fire = (e) => {
+    if (!pressed) return;
+    pressed = false;
+    e.preventDefault();
+    e.stopPropagation();
+    if (pop.classList.contains("show")) {
+      combo.show(false);
+    } else {
+      if (document.activeElement !== input) input.focus();
+      combo.open();
+    }
+  };
+  arrow.addEventListener("mousedown", (e) => { e.preventDefault(); pressed = true; });
+  arrow.addEventListener("mouseup", fire);
+  arrow.addEventListener("pointerup", fire);
+  arrow.addEventListener("mouseleave", () => { pressed = false; });
+}
+
+async function switchModel(el, name, provider, key, baseUrl) {
+  el.textContent = "切换中，请稍候…";
+
+  try {
+    const res = await fetch("/_model", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: name,
+        provider,
+        api_key: key || undefined,
+        base_url: baseUrl || undefined
+      })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.warning || json.error || "切换失败");
+
+    modelMask.classList.remove("show");
+    await loadModelInfo();
+    addMsg("system", "已切换到模型：" + name + (provider ? "（" + provider + "）" : ""));
+    await loadSessions();
+  } catch (e) {
+    el.disabled = false;
+    alert("切换失败：" + e.message);
+  } finally {
+    el.textContent = "确认";
+  }
+}
+
+// 供应商/模型输入框：打字 → 按输入内容过滤浮层
+const provInput = document.getElementById("model-provider");
+
+// 供应商输入变化时，若正好等于某个供应商，同步刷新模型行候选
+provInput.addEventListener("input", () => {
+  const v = provInput.value.trim();
+  if (modelInfo && (modelInfo.catalog || {})[v]) renderModelList(v);
+});
+// 在输入框里按 Enter 只确认选项，不让它触发"确认"按钮
+[provInput, document.getElementById("model-select")].forEach(el =>
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); }));
+// 点遮罩空白处收起两边浮层（点弹窗内部不收起）
+modelMask.addEventListener("click", (e) => {
+  if (e.target !== modelMask) return;
+  provCombo.show(false);
+  modelCombo.show(false);
+});
+
+const modelInput = document.getElementById("model-select");
+bindArrow(document.getElementById("provider-arrow"), provInput, provCombo,
+          document.getElementById("provider-pop"));
+bindArrow(document.getElementById("model-arrow"), modelInput, modelCombo,
+          document.getElementById("model-pop"));
+
+document.getElementById("model-confirm").addEventListener("click", (e) => {
+  e.preventDefault();
+  const btn = e.currentTarget;
+  const provider = document.getElementById("model-provider").value.trim();
+  const name = document.getElementById("model-select").value;
+  if (!provider) return alert("请先选择供应商");
+  if (!(modelInfo.catalog || {})[provider])
+    return alert("没有这个供应商：" + provider);
+  if (!name) return alert("请先选择模型");
+  const key = document.getElementById("model-key").value.trim();
+  const baseUrl = document.getElementById("model-base").value.trim();
+
+  const already = provider === modelInfo.provider && name === modelInfo.current;
+  if (already) { modelMask.classList.remove("show"); return; }
+
+  btn.disabled = true;
+  switchModel(btn, name, provider, key, baseUrl);
+});
+
+document.getElementById("model-cancel").addEventListener("click", () => {
+  modelMask.classList.remove("show");
+});
+
 // ============ 启动 ============
 (async function init() {
   if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
+  loadModelInfo();
   if (!cfg) { openCfg(); return; }
   await loadSessions();
   if (currentId) {
