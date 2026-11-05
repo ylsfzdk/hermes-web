@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Web</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/dialog.css">
+<link rel="stylesheet" href="css/key-dialog.css">
+<link rel="stylesheet" href="css/model-dialog.css">
+</head><body>
+
+<aside id="sidebar">
+  <div id="sidebar-head">
+    <button id="new-ws" type="button">+ 新建工作区</button>
+  </div>
+  <div id="ws-list"></div>
+
+  <div id="sidebar-foot">
+    <div id="settings-pop">
+      <div class="set-row" id="row-model">
+        <span>模型</span>
+        <span class="sub" id="model-name">加载中…</span>
+      </div>
+      <div class="set-row" id="row-key">
+        <span>密钥</span>
+        <span class="arrow">›</span>
+      </div>
+    </div>
+    <button id="gear-btn" type="button">
+      <span class="gear-icon">⚙</span><span>设置</span>
+    </button>
+  </div>
+</aside>
+
+<div id="main">
+  <header id="topbar">
+    <button id="toggle-sidebar" type="button" title="切换侧栏">☰</button>
+    <span id="topbar-title">Hermes Web</span>
+  </header>
+
+  <div id="chat"><div id="chat-inner"></div></div>
+
+  <div id="input-bar">
+    <div id="input-inner">
+      <input id="input" type="text" placeholder="跟 Hermes 说点什么..." autocomplete="off">
+      <button id="send-btn" type="button">发送</button>
+    </div>
+  </div>
+</div>
+
+<div id="cfg-mask" class="mask">
+  <div id="cfg" class="dialog">
+    <h2 id="cfg-title">修改密钥</h2>
+    <label>API Key</label>
+    <input id="cfg-key" type="password" placeholder="API_SERVER_KEY 的值">
+    <div id="cfg-note">
+      此页面的 Key 对所有能打开它的人可见，仅限可信局域网使用。
+      配置保存在本机浏览器，不会上传。
+    </div>
+    <div id="cfg-btns" class="dialog-btns">
+      <button id="cfg-cancel" class="btn-ghost" type="button">取消</button>
+      <button id="cfg-save" class="btn-primary" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="model-mask" class="mask">
+  <div id="model-box" class="dialog">
+    <h2>切换模型</h2>
+    <label class="mf-label">供应商</label>
+    <div id="model-provider-wrap">
+      <input id="model-provider" type="text" autocomplete="off" placeholder="输入名称筛选，或从下拉里选">
+      <span id="provider-arrow" title="展开供应商列表">▼</span>
+      <div id="provider-pop"></div>
+    </div>
+    <div class="mf-gap"></div>
+    <label class="mf-label">模型</label>
+    <div id="model-select-wrap">
+      <input id="model-select" type="text" autocomplete="off" placeholder="输入名称筛选，或从下拉里选">
+      <span id="model-arrow" title="展开模型列表">▼</span>
+      <div id="model-pop"></div>
+    </div>
+    <label class="mf-label">API Key</label>
+    <input id="model-key" type="password" autocomplete="off" placeholder="sk-...">
+    <label class="mf-label">API 地址</label>
+    <input id="model-base" type="text" autocomplete="off" placeholder="https://.../v1">
+    <div id="model-btns" class="dialog-btns">
+      <button id="model-confirm" class="btn-primary" type="button">确认</button>
+      <button id="model-cancel" class="btn-ghost" type="button">取消</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

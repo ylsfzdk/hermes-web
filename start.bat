@@ -72,7 +72,7 @@ echo   Press Ctrl+C to stop the web server.
 echo ==========================================
 echo.
 
-python server.py 3000
+python backend\server.py 3000
 
 :end
 echo.

@@ -9,11 +9,11 @@
 - 多轮对话记忆
 - **左侧栏工作区**：新建 / 切换 / 删除会话，自动以首条消息前 20 字命名
 - **切换模型**：选择供应商 → 选择模型 → 填 API Key / API 地址 → 确认，自动改写配置并重启网关
-- 供应商与模型均为浮层下拉，支持输入前缀过滤（供应商 235 家、模型 8932 个全量可选）
-- 工具调用过程可见
-- 生成中可中断（停止按钮）
-- 局域网内手机浏览器直接访问
-- 无需数据库，纯前端单文件
+- 供应商按前缀过滤、模型按包含过滤，均为浮层下拉（本机目录 235 家供应商 / 8944 个模型，随 `models_dev_cache.json` 变化）
+- 工具调用过程可见（运行中 → ✓ 完成 / ✗ 失败）
+- 生成中可中断（发送按钮变「停止」）
+- 局域网内手机浏览器直接访问，窄屏自动收起侧栏
+- 无需数据库，前端零构建
 
 ## 前置要求
 
@@ -48,18 +48,40 @@ API_SERVER_HOST=0.0.0.0
 
 ```
 E:\hermes-web\
-├── index.html    前端单文件（侧栏 / 聊天 / 设置 / 模型切换面板）
-├── server.py     静态文件 + 反向代理 + /_model 模型管理接口
+├── frontend\
+│   ├── index.html            页面骨架（CSS 和 JS 都外链）
+│   ├── css\
+│   │   ├── base.css          侧栏 / 主区 / 消息气泡 / 输入框
+│   │   ├── dialog.css        弹窗公共：遮罩、卡片、按钮
+│   │   ├── key-dialog.css    密钥弹窗
+│   │   └── model-dialog.css  模型切换弹窗（含浮层下拉）
+│   └── js\
+│       ├── main.js           入口：接好各模块后启动
+│       ├── common.js         配置读写、遮罩显隐、左下角设置菜单
+│       ├── chat.js           会话列表 + 消息渲染 + SSE 流式回复
+│       ├── config.js         密钥弹窗
+│       └── model.js          模型切换弹窗
+├── backend\
+│   ├── server.py         入口：路由（/_model、代理、静态文件）+ 线程化 HTTP 服务
+│   ├── proxy.py          /api/、/v1/、/health 反向代理（SSE 逐块转发）
+│   ├── model_api.py      GET/POST /_model 查询与切换模型（含失败回滚）
+│   ├── hermes_config.py  读写 ~/.hermes/config.yaml 与模型缓存
+│   ├── gateway.py        结束端口进程、重启 hermes gateway 并等就绪
+│   └── config_paths.py   路径 / 端口 / 代理前缀常量
 ├── start.bat     启动器（拉网关 + 起网页服务）
 ├── README.md     本文件
 └── .gitignore
 ```
 
+静态站点根目录是 `frontend\`，`backend\` 里的 `*.py` 不会被网页暴露。
+
+前端是**零构建**的原生 ES module：浏览器直接 `import`，没有打包步骤。代价是必须通过 `start.bat`（或 `python backend\server.py`）访问，直接双击 `index.html` 打开 `file://` 会因为跨域限制加载不了模块。
+
 ## 端口
 
 | 端口 | 用途 |
 |---|---|
-| 3000 | 网页 + 同源反向代理（必须是 `server.py`，用 `python -m http.server 3000` 会导致 `/api/*` 全部 404） |
+| 3000 | 网页 + 同源反向代理（必须是 `backend\server.py`，用 `python -m http.server 3000` 会导致 `/api/*` 全部 404） |
 | 8642 | Hermes Gateway（`server.py` 把 `/api/`、`/v1/`、`/health` 转发到这里） |
 
 ## 切换模型
@@ -78,7 +100,9 @@ API 地址  [文本框]       ← 留空则不修改
 
 1. 改写 `~/.hermes/config.yaml` 的 `model:` 段（`provider` / `name` / `default` / `api_key` / `base_url`），原文件备份为 `config.yaml.bak`
 2. 把选中的供应商写回 `~/.hermes/provider_models_cache.json`
-3. 结束占用 8642 端口的进程并重启网关，约需 3 秒，期间对话会短暂中断
+3. 结束占用 8642 端口的进程并重启网关，最多等 40 秒；起不来自动还原 `config.yaml.bak` 并用旧配置再重启一次，期间对话会中断
+
+模型与供应商都没变、也没填 Key / 地址时，「确认」直接关闭面板，不重启网关。
 
 > **注意**：供应商列表来自 `~/.hermes/models_dev_cache.json`（只读）。切到没配置过 key 的供应商时，必须同时填 API Key 和 API 地址，否则会鉴权失败。
 
@@ -94,11 +118,15 @@ API 地址  [文本框]       ← 留空则不修改
 {
   "provider": "deepseek",
   "current": "deepseek-flash",
+  "base_url": "https://api.deepseek.com/v1",
+  "has_key": true,
   "available": ["deepseek-v4-pro", "deepseek-flash", "..."],
   "providers": ["302ai", "abacus", "...共 235 家..."],
   "catalog": { "deepseek": ["deepseek-flash", "..."], "...": [] }
 }
 ```
+
+`base_url` / `has_key` 直接读自 `config.yaml` 的 `model:` 段；`has_key` 只表示是否已配密钥，不回传明文。
 
 ### `POST /_model`
 
@@ -109,18 +137,22 @@ API 地址  [文本框]       ← 留空则不修改
 
 `api_key` / `base_url` 可省略（省略则不改）。
 
+成功返回 `{ "ok": true, "model", "provider", "backup" }`；网关起不来时自动还原配置并用旧配置再重启一次，返回 `{ "ok": false, "warning", "restored", "backup" }`，HTTP 状态码仍是 200，前端以 `ok` 判断。
+
 ## 已知限制
 
 - **`/_model` 无鉴权**：能打开本页面的局域网设备都能改本机模型配置和 API Key，仅限可信网络使用
-- **切换失败不回滚**：配置已写入但网关起不来时，需要手动还原 `config.yaml.bak`
+- **回滚可能失败**：先还原 `config.yaml` 再重启旧网关；若还原失败会把 `backup` 路径告诉前端，需手动还原
 - **跨供应商不自动配 `base_url`**：切到 openrouter 等供应商时，`base_url` 仍停在上一个供应商的值，需手动填写
-- **`/_model` 返回约 2MB**：包含全部 8932 个模型的目录，首次加载稍慢
+- **`/_model` 返回约 2MB**：包含全部模型的目录，首次加载稍慢
+- **网关重启会中断对话**：切换模型时正在进行的流式回复会被断开
+- **重启依赖进程管理**：`netstat` + `taskkill` 结束 8642 端口进程，仅验证过 Windows
 - **`deepseek-flash` 会被 Hermes 改写为 `deepseek-chat`**：这是 Hermes 的模型名规范化规则，官方 `deepseek-chat` 别名同样指向最新的 V4.1 Flash，实际效果一致，仅日志中显示为别名
 
 ## 开发提示
 
 - 修改前端后浏览器需 `Ctrl + F5` 强制刷新，静态文件缓存可能吃掉改动
-- 修改 `server.py` 后必须关闭并重开 `start.bat`
+- 修改 `backend\` 下任何 `.py` 后必须关闭并重开 `start.bat`
 - 切换模型后若页面发消息没反应，优先看浏览器控制台 Network 里的 `chat/stream` 请求状态码
 
 ### 查看实际使用的模型

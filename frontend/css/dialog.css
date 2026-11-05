@@ -1,0 +1,17 @@
+/* ============================================================
+   弹窗公共：遮罩 + 卡片 + 按钮
+   ============================================================ */
+
+.mask { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none;
+        align-items: center; justify-content: center; z-index: 100; }
+.mask.show { display: flex; }
+
+.dialog { background: #fff; padding: 24px; border-radius: 12px; width: 90%; max-width: 420px; }
+.dialog h2 { font-size: 17px; margin-bottom: 16px; }
+
+.dialog-btns { display: flex; gap: 8px; margin-top: 20px; }
+.dialog-btns button { flex: 1; padding: 10px; font-size: 14px; border-radius: 8px;
+                      border: none; cursor: pointer; }
+.btn-primary { background: #1a73e8; color: #fff; }
+.btn-primary:disabled { opacity: .5; cursor: default; }
+.btn-ghost { background: #eee; color: #333; }

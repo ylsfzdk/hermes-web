@@ -1,0 +1,34 @@
+/* ============================================================
+   模型切换弹窗：只在 index.html 里用到
+   ============================================================ */
+
+#model-mask { z-index: 110; }
+#model-provider, #model-select, #model-key, #model-base {
+  width: 100%; padding: 10px 12px; font-size: 14px;
+  border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px;
+  background: #fff; color: #333; box-sizing: border-box; }
+.mf-label { display: block; font-size: 12px; color: #888; margin-bottom: 6px; }
+.mf-gap { height: 12px; }
+
+/* 供应商 / 模型两行共用的浮层下拉结构 */
+#model-provider-wrap, #model-select-wrap { position: relative; }
+#model-provider, #model-select { padding-right: 30px; margin-bottom: 0; }
+#provider-arrow, #model-arrow { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0; padding: 0; background: none; border: none;
+  color: #888; font-size: 12px; line-height: 1;
+  cursor: pointer; user-select: none;
+  /* 放大点击热区，否则纯箭头太小点不中 */
+  width: 24px; height: 28px; z-index: 2; }
+#provider-arrow:hover, #model-arrow:hover { color: #1a73e8; }
+#provider-pop, #model-pop { position: absolute; left: 0; right: 0; top: 100%; margin-top: 4px;
+  background: #fff; border: 1px solid #ddd; border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.12); max-height: 220px; overflow-y: auto;
+  display: none; z-index: 130; }
+#provider-pop.show, #model-pop.show { display: block; }
+.prov-opt { padding: 9px 12px; font-size: 14px; color: #333; cursor: pointer;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prov-opt:hover, .prov-opt.active { background: #f0f5ff; }
+.prov-opt.sel { color: #1a73e8; font-weight: 500; }
+.prov-empty { padding: 10px 12px; font-size: 13px; color: #aaa; }
+.sub.warn { color: #d32f2f; }
