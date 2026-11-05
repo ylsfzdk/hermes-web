@@ -36,6 +36,8 @@ def _read_config_model():
 
     provider = None
     current = None
+    base_url = None
+    has_key = False
     inside = False
     for line in text.splitlines():
         if line.startswith("model:"):
@@ -49,7 +51,12 @@ def _read_config_model():
                 provider = s.split(":", 1)[1].strip() or None
             elif s.startswith("default:") and current is None:
                 current = s.split(":", 1)[1].strip() or None
-    return {"provider": provider, "current": current}
+            elif s.startswith("base_url:") and base_url is None:
+                base_url = s.split(":", 1)[1].strip() or None
+            elif s.startswith("api_key:") and not has_key:
+                has_key = (s.split(":", 1)[1].strip() or "null") not in ("null", "''", '""')
+    return {"provider": provider, "current": current,
+            "base_url": base_url, "has_key": has_key}
 
 
 def _catalog():

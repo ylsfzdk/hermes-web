@@ -223,9 +223,9 @@
       <span id="model-arrow" title="展开模型列表">▼</span>
       <div id="model-pop"></div>
     </div>
-    <label class="mf-label">API Key（留空则沿用供应商已保存的密钥）</label>
+    <label class="mf-label">API Key</label>
     <input id="model-key" type="password" autocomplete="off" placeholder="sk-...">
-    <label class="mf-label">API 地址（留空则不修改）</label>
+    <label class="mf-label">API 地址</label>
     <input id="model-base" type="text" autocomplete="off" placeholder="https://.../v1">
     <div id="model-btns">
       <button id="model-confirm" type="button">确认</button>
@@ -679,8 +679,15 @@ async function loadModelInfo() {
 
 function openModelPicker() {
   const pinput = document.getElementById("model-provider");
-  document.getElementById("model-key").value = "";
-  document.getElementById("model-base").value = "";
+  const keyEl = document.getElementById("model-key");
+  const baseEl = document.getElementById("model-base");
+  keyEl.value = "";
+  baseEl.value = "";
+  // 回填已保存的 base_url；key 不显示明文，只提示是否已配置
+  baseEl.value = (modelInfo && modelInfo.base_url) || "";
+  keyEl.placeholder = modelInfo && modelInfo.has_key
+    ? "已配置，留空则不修改"
+    : "输入 API Key";
   document.getElementById("model-confirm").disabled = false;
 
   if (!modelInfo) {
@@ -935,7 +942,11 @@ document.getElementById("model-confirm").addEventListener("click", (e) => {
   const key = document.getElementById("model-key").value.trim();
   const baseUrl = document.getElementById("model-base").value.trim();
 
-  const already = provider === modelInfo.provider && name === modelInfo.current;
+  // 只要 key 有输入、或 base_url 与已保存的不同，就必须提交，
+  // 否则只改这两项会被当成"没变"直接吞掉
+  const baseChanged = baseUrl !== ((modelInfo && modelInfo.base_url) || "");
+  const already = provider === modelInfo.provider && name === modelInfo.current
+                  && !key && !baseChanged;
   if (already) { modelMask.classList.remove("show"); return; }
 
   btn.disabled = true;
