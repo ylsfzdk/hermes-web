@@ -79,6 +79,14 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def handle_error(self, request, client_address):
+        """浏览器主动断开（点停止、关闭标签）是正常现象，打一行就够，不刷 traceback。"""
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
+            sys.stderr.write("%s - client disconnected\n" % (client_address[0],))
+            return
+        super().handle_error(request, client_address)
+
 
 if __name__ == "__main__":
     PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000

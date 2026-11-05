@@ -210,6 +210,17 @@ async function ensureSession(firstText) {
   return currentId;
 }
 
+// 从 state.db 取会话历史，转成 OpenAI messages。
+// /v1/chat/completions 不走会话记忆，历史必须自己带上。
+async function buildHistory(sid) {
+  const res = await api("/api/sessions/" + encodeURIComponent(sid) + "/messages");
+  if (!res.ok) throw new Error("加载历史失败 HTTP " + res.status);
+  const json = await res.json();
+  return (json.data || [])
+    .filter(m => (m.role === "user" || m.role === "assistant") && m.content && String(m.content).trim())
+    .map(m => ({ role: m.role, content: String(m.content) }));
+}
+
 async function sendMessage(text) {
   addMsg("user", text);
   input.value = "";
@@ -219,11 +230,20 @@ async function sendMessage(text) {
 
   try {
     const sid = await ensureSession(text);
+    const history = await buildHistory(sid);
 
+    // 走 /v1/chat/completions 而不是 /api/sessions/{id}/chat/stream：
+    // 只有前者在客户端断开时会调 agent.interrupt()，真正掐断推理。
+    // X-Hermes-Session-Id 让这一轮落进当前会话，会话列表里能看到。
     controller = new AbortController();
-    const res = await api(`/api/sessions/${encodeURIComponent(sid)}/chat/stream`, {
+    const res = await api("/v1/chat/completions", {
       method: "POST",
-      body: JSON.stringify({ message: text }),
+      headers: { "X-Hermes-Session-Id": sid },
+      body: JSON.stringify({
+        model: "hermes-agent",
+        stream: true,
+        messages: [...history, { role: "user", content: text }]
+      }),
       signal: controller.signal
     });
 
@@ -255,25 +275,28 @@ async function sendMessage(text) {
           if (line.startsWith("event:")) evName = line.slice(6).trim();
           else if (line.startsWith("data:")) evData += line.slice(5).trim();
         }
-        if (!evData) continue;
+        if (!evData || evData === "[DONE]") continue;
 
         let ev;
         try { ev = JSON.parse(evData); } catch (e) { continue; }
 
-        if (evName === "assistant.delta" && ev.delta) {
-          fullText += ev.delta;
+        if (evName === "hermes.tool.progress") {
+          if (ev.status === "running") {
+            if (!toolCard) toolCard = addToolCard(ev.label || ev.tool || "工具", "");
+          } else if (toolCard) {
+            toolCard.classList.add("done");
+            toolCard.textContent = `✓ ${ev.tool || "工具"}`;
+            toolCard = null;
+          }
+          continue;
+        }
+
+        // OpenAI 流式格式：每个 chunk 带 choices[0].delta.content
+        const delta = ev.choices && ev.choices[0] && ev.choices[0].delta;
+        if (delta && delta.content) {
+          fullText += delta.content;
           bubble.textContent = fullText;
           scrollBottom();
-        } else if (evName === "tool.started") {
-          if (!toolCard) toolCard = addToolCard("正在调用 " + (ev.tool_name || "工具"), ev.preview);
-        } else if (evName === "tool.completed") {
-          if (toolCard) { toolCard.classList.add("done"); toolCard.textContent = `✓ ${ev.tool_name || "工具"}`; toolCard = null; }
-        } else if (evName === "tool.failed") {
-          if (toolCard) { toolCard.classList.add("fail"); toolCard.textContent = `✗ ${ev.tool_name || "工具"} 失败`; toolCard = null; }
-        } else if (evName === "assistant.completed" && ev.content) {
-          if (ev.content !== fullText) { fullText = ev.content; bubble.textContent = fullText; }
-        } else if (evName === "error") {
-          throw new Error(ev.message || "服务器错误");
         }
       }
     }
@@ -304,7 +327,7 @@ async function sendMessage(text) {
 
   } catch (err) {
     if (err.name === "AbortError") {
-      addMsg("system", "已停止生成");
+      // 用户主动停止，不提示
     } else if (String(err.message).includes("Failed to fetch")) {
       addMsg("system",
         "无法连接到服务器。\n\n请确认：\n" +

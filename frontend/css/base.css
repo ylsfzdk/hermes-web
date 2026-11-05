@@ -104,8 +104,8 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
             border-radius: 24px; font-size: 15px; cursor: pointer; white-space: nowrap; }
 #send-btn:hover { background: #1a73e8; }
 #send-btn:disabled { background: #aaa; cursor: not-allowed; }
-#send-btn.stop { background: #e8a0a0; }
-#send-btn.stop:hover { background: #d32f2f; }
+#send-btn.stop { background: #a8c7fa; }
+#send-btn.stop:hover { background: #1a73e8; }
 
 @media (max-width: 720px) {
   #sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 50;
