@@ -71,15 +71,41 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 .tool-card.done { border-color: #c8e6c9; background: #f1f8f4; }
 .tool-card.fail { border-color: #ffcdd2; background: #fff5f5; color: #c62828; }
 
-#input-bar { padding: 16px; background: #fff; border-top: 1px solid #e0e0e0; }
-#input-inner { max-width: 800px; margin: 0 auto; display: flex; gap: 8px; }
-#input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 24px;
-         font-size: 15px; outline: none; font-family: inherit; }
-#input:focus { border-color: #1a73e8; }
-#send-btn { padding: 12px 24px; background: #1a73e8; color: #fff; border: none;
+/* 输入区：整条不带边框，只有底下一道分隔线 */
+#input-bar { padding: 16px; background: #fff; border: none; }
+/* 两层：上面输入框，下面一排按钮 */
+#input-inner { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column;
+               gap: 4px; border: 1px solid #ddd; border-radius: 16px; padding: 8px 10px; }
+#input-row { display: flex; }
+#btn-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+#reasoning-wrap { position: relative; flex-shrink: 0; }
+/* 档位按钮无边框 */
+#reasoning-btn { flex-shrink: 0; padding: 10px 14px; border-radius: 24px; font-size: 13px;
+                 font-family: inherit; background: none; border: none; color: #666;
+                 cursor: pointer; white-space: nowrap; box-shadow: none; outline: none; }
+#reasoning-btn:hover { box-shadow: none; background: #ececec; }
+#reasoning-btn #reasoning-name { font-weight: 500; }
+#reasoning-btn.on { background: #eef4ff; color: #1a73e8; }
+/* 上拉框：在按钮正上方 */
+#reasoning-pop { position: absolute; left: 0; bottom: calc(100% + 8px); min-width: 100%;
+                 background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
+                 box-shadow: 0 6px 20px rgba(0,0,0,.12); padding: 4px;
+                 display: none; z-index: 60; }
+#reasoning-pop.show { display: block; }
+.reasoning-opt { padding: 8px 14px; border-radius: 6px; font-size: 13px; color: #333;
+                 cursor: pointer; white-space: nowrap; }
+.reasoning-opt:hover { background: #f0f5ff; }
+.reasoning-opt.sel { color: #1a73e8; font-weight: 500; }
+/* 输入框无边框 */
+#input { flex: 1; padding: 12px 10px; border: none; outline: none; background: none;
+         font-size: 15px; font-family: inherit; }
+/* 发送按钮：浅蓝底，悬停变蓝 */
+#send-btn { padding: 12px 24px; background: #a8c7fa; color: #fff; border: none;
             border-radius: 24px; font-size: 15px; cursor: pointer; white-space: nowrap; }
+#send-btn:hover { background: #1a73e8; }
 #send-btn:disabled { background: #aaa; cursor: not-allowed; }
-#send-btn.stop { background: #d32f2f; }
+#send-btn.stop { background: #e8a0a0; }
+#send-btn.stop:hover { background: #d32f2f; }
 
 @media (max-width: 720px) {
   #sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 50;

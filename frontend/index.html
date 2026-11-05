@@ -43,8 +43,16 @@
 
   <div id="input-bar">
     <div id="input-inner">
-      <input id="input" type="text" placeholder="跟 Hermes 说点什么..." autocomplete="off">
-      <button id="send-btn" type="button">发送</button>
+      <div id="input-row">
+        <input id="input" type="text" placeholder="跟 Hermes 说点什么..." autocomplete="off">
+      </div>
+      <div id="btn-row">
+        <div id="reasoning-wrap">
+          <button id="reasoning-btn" type="button" title="推理强度（切换会重启网关）"><span id="reasoning-name">默认</span></button>
+          <div id="reasoning-pop"></div>
+        </div>
+        <button id="send-btn" type="button">发送</button>
+      </div>
     </div>
   </div>
 </div>

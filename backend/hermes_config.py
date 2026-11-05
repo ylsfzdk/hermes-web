@@ -6,19 +6,96 @@ import time
 from config_paths import CONFIG, MODELS_CACHE, MODELS_DEV_CACHE
 
 
-def read_config_model():
-    """从 config.yaml 读当前模型与供应商。"""
+# Hermes 认可档位（hermes_constants.VALID_REASONING_EFFORTS），空串 = 服务端默认
+REASONING_LEVELS = ("", "none", "minimal", "low", "medium", "high", "xhigh")
+
+
+def _yaml_str(v):
+    """YAML 标量：能裸写就裸写，否则加引号。"""
+    v = str(v)
+    if v and all(c.isalnum() or c in "-_." for c in v):
+        return v
+    return json.dumps(v)
+
+
+def _section(text, name):
+    """返回顶层段 name: 下的所有行（不含段头）；段不存在返回 []。"""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith(name + ":"):
+            out = []
+            for nxt in lines[i + 1:]:
+                if nxt.strip() and not nxt[0].isspace():
+                    break
+                out.append(nxt)
+            return out
+    return []
+
+
+def _section_get(text, section, key):
+    for line in _section(text, section):
+        s = line.strip()
+        if s.startswith(key + ":"):
+            return s.split(":", 1)[1].strip()
+    return None
+
+
+def _section_set(lines, section, key, value):
+    """过程化改 YAML：段内改/加一行，段不存在就新建。"""
+    start = next((i for i, l in enumerate(lines) if l.startswith(section + ":")), None)
+    if start is None:
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] += "\n"
+        lines += [section + ":\n", "  " + key + ": " + value + "\n"]
+        return lines
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if lines[i].strip() and not lines[i][0].isspace():
+            end = i
+            break
+
+    indent = "  "
+    for i in range(start + 1, end):
+        s = lines[i]
+        if s.strip():
+            indent = s[:len(s) - len(s.lstrip())]
+            if s.strip().startswith(key + ":"):
+                lines[i] = indent + key + ": " + value + "\n"
+                return lines
+    lines.insert(end, indent + key + ": " + value + "\n")
+    return lines
+
+
+def _read_text():
     try:
         with open(CONFIG, "r", encoding="utf-8") as f:
-            text = f.read()
+            return f.read()
     except Exception:
-        return {"provider": None, "current": None}
+        return ""
 
-    provider = None
-    current = None
-    base_url = None
-    has_key = False
+
+def _write_text(text):
+    backup = CONFIG + ".bak"
+    try:
+        with open(backup, "w", encoding="utf-8", newline="") as f:
+            f.write(_read_text())
+    except Exception:
+        backup = None
+    try:
+        with open(CONFIG, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+    except PermissionError:
+        raise RuntimeError("没有权限修改 config.yaml，请用普通用户身份运行 start.bat；"
+                           "或先给 %s 加写权限（同名 .bak 也要能写）" % CONFIG)
+    return backup
+
+
+def read_config_model():
+    """从 config.yaml 读当前模型、供应商与推理档位。"""
+    text = _read_text()
     inside = False
+    provider = current = base_url = None
+    has_key = False
     for line in text.splitlines():
         if line.startswith("model:"):
             inside = True
@@ -36,7 +113,33 @@ def read_config_model():
             elif s.startswith("api_key:") and not has_key:
                 has_key = (s.split(":", 1)[1].strip() or "null") not in ("null", "''", '""')
     return {"provider": provider, "current": current,
-            "base_url": base_url, "has_key": has_key}
+            "base_url": base_url, "has_key": has_key,
+            "reasoning": (_section_get(text, "agent", "reasoning_effort") or "")
+                         .strip("'\"")}
+
+
+def write_reasoning_effort(level):
+    """写 agent.reasoning_effort（网关唯一的推理档位来源）。返回备份路径；
+    值没变时返回 None，调用方据此跳过网关重启。"""
+    text = _read_text()
+    if (_section_get(text, "agent", "reasoning_effort") or "").strip('"\'') == level:
+        return None
+    lines = _section_set(text.splitlines(True), "agent",
+                         "reasoning_effort", _yaml_str(level))
+    return _write_text("".join(lines))
+
+
+if __name__ == "__main__":
+    # 自检：改一行不碰别的，段缺失能新建，同值不写文件
+    t = "model:\n  default: a\nagent:\n  max_turns: 150\n  reasoning_effort: ''\n"
+    out = "".join(_section_set(t.splitlines(True), "agent", "reasoning_effort", "high"))
+    assert "  reasoning_effort: high\n" in out and "max_turns: 150" in out, out
+    assert "default: a" in out, out
+    out2 = "".join(_section_set(["model:\n"], "agent", "reasoning_effort", "\"x\""))
+    assert out2 == 'model:\nagent:\n  reasoning_effort: "x"\n', repr(out2)
+    assert _section_get("agent:\n  reasoning_effort: high\n", "agent", "reasoning_effort") == "high"
+    assert _yaml_str("") == '""' and _yaml_str("high") == "high"
+    print("ok")
 
 
 def catalog():

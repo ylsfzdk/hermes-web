@@ -3,6 +3,7 @@
    ============================================================ */
 
 import { show, hide } from "./common.js";
+import { renderReasoning } from "./reasoning.js";
 
 const mask = document.getElementById("model-mask");
 const modelNameEl = document.getElementById("model-name");
@@ -27,6 +28,7 @@ export async function loadModelInfo() {
     modelInfo = await res.json();
     modelNameEl.textContent = modelInfo.current || "未知";
     modelNameEl.classList.remove("warn");
+    renderReasoning(modelInfo);
   } catch (e) {
     modelNameEl.textContent = "读取失败";
     modelNameEl.classList.add("warn");

@@ -60,11 +60,12 @@ E:\hermes-web\
 │       ├── common.js         配置读写、遮罩显隐、左下角设置菜单
 │       ├── chat.js           会话列表 + 消息渲染 + SSE 流式回复
 │       ├── config.js         密钥弹窗
+│       ├── reasoning.js      推理强度：设置菜单里循环切档
 │       └── model.js          模型切换弹窗
 ├── backend\
-│   ├── server.py         入口：路由（/_model、代理、静态文件）+ 线程化 HTTP 服务
+│   ├── server.py         入口：路由（/_model、/_reasoning、代理、静态文件）+ 线程化 HTTP 服务
 │   ├── proxy.py          /api/、/v1/、/health 反向代理（SSE 逐块转发）
-│   ├── model_api.py      GET/POST /_model 查询与切换模型（含失败回滚）
+│   ├── model_api.py      GET/POST /_model 查询与切换模型、POST /_reasoning 切推理档位（含失败回滚）
 │   ├── hermes_config.py  读写 ~/.hermes/config.yaml 与模型缓存
 │   ├── gateway.py        结束端口进程、重启 hermes gateway 并等就绪
 │   └── config_paths.py   路径 / 端口 / 代理前缀常量
@@ -139,9 +140,25 @@ API 地址  [文本框]       ← 留空则不修改
 
 成功返回 `{ "ok": true, "model", "provider", "backup" }`；网关起不来时自动还原配置并用旧配置再重启一次，返回 `{ "ok": false, "warning", "restored", "backup" }`，HTTP 状态码仍是 200，前端以 `ok` 判断。
 
+## 推理强度
+
+Hermes 原生支持 `/reasoning` 命令（`agent.reasoning_effort`），但这是**网关全局配置**，不是单轮参数：
+`/api/sessions/{id}/chat/stream` 不接收 reasoning 字段，每次请求都由 `_create_agent` 读 `config.yaml`。
+
+左下角 **⚙ 设置 → 推理强度** 点一下循环切档：`默认 → none → minimal → low → medium → high → xhigh → 默认`。
+
+- 改的是 `~/.hermes/config.yaml` 的 `agent.reasoning_effort`，和原来一样先备份成 `.bak`，再重启网关（对话会中断）
+- 值没变则不写文件、不重启
+- `默认` 是不设该键，由 Hermes/供应商自己决定（DeepSeek 官方端默认 `high`）
+- DeepSeek 实际映射：`low` / `medium` / `high` 原样传 `reasoning_effort`，`xhigh` → `max`；
+  `none` 关 thinking；`minimal` 会被 Hermes 丢掉（DeepSeek 无该档）
+- 非 DeepSeek 供应商的映射走各自的 provider profile，未注册的供应商可能不生效
+
+对应接口 `POST /_reasoning`：`{ "level": "high" }`，非法档位返回 400。
+
 ## 已知限制
 
-- **`/_model` 无鉴权**：能打开本页面的局域网设备都能改本机模型配置和 API Key，仅限可信网络使用
+- **`/_model`、`/_reasoning` 无鉴权**：能打开本页面的局域网设备都能改本机模型配置和 API Key，仅限可信网络使用
 - **回滚可能失败**：先还原 `config.yaml` 再重启旧网关；若还原失败会把 `backup` 路径告诉前端，需手动还原
 - **跨供应商不自动配 `base_url`**：切到 openrouter 等供应商时，`base_url` 仍停在上一个供应商的值，需手动填写
 - **`/_model` 返回约 2MB**：包含全部模型的目录，首次加载稍慢

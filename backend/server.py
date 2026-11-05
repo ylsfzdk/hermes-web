@@ -48,6 +48,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/_model":
             return model_api.switch(self)
+        if self.path == "/_reasoning":
+            return model_api.reasoning(self)
         if self._is_proxy():
             return proxy.proxy(self, "POST")
         self.send_error(404)
