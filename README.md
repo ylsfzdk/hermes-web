@@ -11,7 +11,9 @@
 - **切换模型**：选择供应商 → 选择模型 → 填 API Key / API 地址 → 确认，自动改写配置并重启网关
 - 供应商按前缀过滤、模型按包含过滤，均为浮层下拉（本机目录 235 家供应商 / 8944 个模型，随 `models_dev_cache.json` 变化）
 - 工具调用过程可见（运行中 → ✓ 完成 / ✗ 失败）
+- **会话级附件**：输入行左侧 📎 按钮选文件，84 种格式 + 20 MB 上限 + 文件头校验，按会话存到 `~/.hermes/sessions/<会话ID>/attachments/`
 - 生成中可中断（发送按钮变「停止」）
+- 输入框没字也没有附件时，发送按钮不可用
 - 局域网内手机浏览器直接访问，窄屏自动收起侧栏
 - 无需数据库，前端零构建
 
@@ -60,10 +62,12 @@ E:\hermes-web\
 │       ├── common.js         配置读写、遮罩显隐、左下角设置菜单
 │       ├── chat.js           会话列表 + 消息渲染 + SSE 流式回复
 │       ├── config.js         密钥弹窗
+│       ├── attachments.js    会话级附件：📎 选文件、格式/大小校验、上传
 │       ├── reasoning.js      推理强度：设置菜单里循环切档
 │       └── model.js          模型切换弹窗
 ├── backend\
-│   ├── server.py         入口：路由（/_model、/_reasoning、代理、静态文件）+ 线程化 HTTP 服务
+│   ├── server.py         入口：路由（/_model、/_reasoning、/_attachments、代理、静态文件）+ 线程化 HTTP 服务
+│   ├── attachments.py    /_attachments 上传/列表/删除：格式白名单 + 文件头探测 + 20 MB 上限
 │   ├── proxy.py          /api/、/v1/、/health 反向代理（SSE 逐块转发）
 │   ├── model_api.py      GET/POST /_model 查询与切换模型、POST /_reasoning 切推理档位（含失败回滚）
 │   ├── hermes_config.py  读写 ~/.hermes/config.yaml 与模型缓存
@@ -84,6 +88,67 @@ E:\hermes-web\
 |---|---|
 | 3000 | 网页 + 同源反向代理（必须是 `backend\server.py`，用 `python -m http.server 3000` 会导致 `/api/*` 全部 404） |
 | 8642 | Hermes Gateway（`server.py` 把 `/api/`、`/v1/`、`/health` 转发到这里） |
+
+## 附件（会话级）
+
+输入行下面那一行最左边是 📎 按钮，选中的文件先过基础校验，通过才落盘。
+
+```
+┌──────────────────────────────────────────┐
+│  跟 Hermes 说点什么...                    │
+│  [📎]                  [默认]  [ 发送 ]   │
+└──────────────────────────────────────────┘
+```
+
+### 校验规则
+
+| 项 | 规则 |
+|---|---|
+| 格式 | 84 种扩展名：文档 / 表格 / 演示 / 图片 / 代码 / 纯文本 / 配置，白名单在 `backend\attachments.py` 的 `TYPES` |
+| 大小 | 单文件 ≤ 20 MB，前后端各拦一次 |
+| 真实格式 | PDF、PNG、JPEG、GIF、WebP、TIFF、BMP、ICO、HEIC、AVIF、Office 老格式（OLE2）和新格式（ZIP 容器）会读文件头，改后缀蒙混的直接拒 |
+| 空文件 | 拒绝 |
+
+前端在选文件时先挡一遍（扩展名 + 大小），后端以实际收到的字节数为准再验一次，并做文件头探测。
+
+### 落盘时机
+
+**选文件只预检，点「发送」才真正写盘。** 预检走 `POST /_attachments?session_id=xxx&commit=0`，只校验不落盘。
+
+代价：还没发送的附件只存在浏览器内存里，刷新页面或切换会话就没了。
+
+### 存放位置
+
+与会话 ID 绑定，和 Hermes 自己的会话数据放在一起：
+
+```
+~/.hermes/sessions/<会话ID>/
+├── attachments/
+│   ├── index.json           元数据数组（原名 / 类型 / 大小 / 随机存储名 / 时间 / sent）
+│   └── <随机名>.<ext>       文件本体（存储名不跟原名走，避免路径注入和同名覆盖）
+└── ...                      该会话目录下的其他文件
+```
+
+### 删除会话时的清理范围
+
+> ⚠️ **会话和附件之间没有外键**，只靠目录名里的会话 ID 对齐。网关的 `DELETE /api/sessions/{id}` **只删 `state.db` 里的记录，不碰这个目录**。
+
+所以前端删会话时会额外调 `DELETE /_attachments?session_id=<会话ID>`，把**整个 `sessions/<会话ID>/` 目录**删掉——附件和该目录下的其他文件一起清。
+
+**不删**：
+
+- `sessions/` 根目录下的 `request_dump_*.json`（网关写的失败请求快照，含完整请求体，暂保留）
+- `sessions/saved/`（主动导出的会话存档，不属于运行时数据）
+
+直接调网关 API 删会话、不经过网页的话，目录仍会残留，需要手动清理。
+
+### 发送与刷新
+
+- 发送时消息前会拼上 `[附件] 文件名`，**只传文件名不传内容** —— 模型需要自己用工具去读磁盘上的文件（所以聊天里可能会看到 `✓ terminal`）
+- 发送成功后输入框上的文件标签会清空，后端把附件标记为 `sent`
+- 刷新页面只恢复「还没发出去」的标签；已发送的不会再冒出来
+
+自检：`python backend\attachments.py`（84 种格式 + 落盘删除闭环）。
 
 ## 切换模型
 
@@ -109,7 +174,7 @@ API 地址  [文本框]       ← 留空则不修改
 
 ## 后端接口
 
-`server.py` 额外提供两个接口（不属于 Hermes 原生 API）：
+`server.py` 额外提供以下接口（不属于 Hermes 原生 API）：`/_model`、`/_reasoning`、`/_attachments`。
 
 ### `GET /_model`
 
@@ -140,6 +205,45 @@ API 地址  [文本框]       ← 留空则不修改
 
 成功返回 `{ "ok": true, "model", "provider", "backup" }`；网关起不来时自动还原配置并用旧配置再重启一次，返回 `{ "ok": false, "warning", "restored", "backup" }`，HTTP 状态码仍是 200，前端以 `ok` 判断。
 
+### `GET /_attachments?session_id=<会话ID>`
+
+列出该会话的全部附件。
+
+```json
+{
+  "ok": true,
+  "files": [
+    { "name": "报告.pdf", "ext": "pdf", "type": "PDF", "size": 14,
+      "id": "192e183a2cee", "stored": "d2874ac05c13b083.pdf",
+      "ts": 1794059460, "sent": false }
+  ]
+}
+```
+
+### `POST /_attachments?session_id=<会话ID>`
+
+上传并落盘，`multipart/form-data`，字段名 `file`。
+
+在 query 后加 `&commit=0` 则**只校验不落盘**，成功返回 `{ "ok": true, "file": { name, ext, type, size } }`（没有 `id` / `stored`）。
+
+校验失败返回 400，`{ "error": "不支持的文件格式：.exe" }` 或 `{ "error": "文件内容与扩展名 .png 不符，已拒绝" }`。
+
+### `POST /_attachments/sent?session_id=<会话ID>`
+
+把已随消息发出的附件标记为 `sent`，体 `{ "ids": ["..."] }`。标记后刷新页面不会再把它们当成待发附件恢复。
+
+### `DELETE /_attachments/<附件id>?session_id=<会话ID>`
+
+删单个附件（文件 + 元数据）。不存在返回 404。
+
+### `DELETE /_attachments?session_id=<会话ID>`
+
+**删除整个 `sessions/<会话ID>/` 目录**，包括 `attachments/` 和该目录下的其他文件。前端删会话时自动调用。
+
+- 幂等：目录不存在也返回 200，`{ "ok": true, "removed": false }`
+- **不动** `sessions/` 根目录下的 `request_dump_*.json`，也不动 `sessions/saved/`
+- `session_id` 会做格式校验（只允许 `A-Za-z0-9_.:-`），删除前用 `realpath` 确认目标是 `sessions/` 下正好一层、名字等于会话 ID 的目录，防路径穿越
+
 ## 推理强度
 
 Hermes 原生支持 `/reasoning` 命令（`agent.reasoning_effort`），但这是**网关全局配置**，不是单轮参数：
@@ -158,13 +262,17 @@ Hermes 原生支持 `/reasoning` 命令（`agent.reasoning_effort`），但这�
 
 ## 已知限制
 
-- **`/_model`、`/_reasoning` 无鉴权**：能打开本页面的局域网设备都能改本机模型配置和 API Key，仅限可信网络使用
+- **`/_model`、`/_reasoning`、`/_attachments` 无鉴权**：能打开本页面的局域网设备都能改本机模型配置、API Key，或往磁盘写文件，仅限可信网络使用
 - **回滚可能失败**：先还原 `config.yaml` 再重启旧网关；若还原失败会把 `backup` 路径告诉前端，需手动还原
 - **跨供应商不自动配 `base_url`**：切到 openrouter 等供应商时，`base_url` 仍停在上一个供应商的值，需手动填写
 - **`/_model` 返回约 2MB**：包含全部模型的目录，首次加载稍慢
 - **网关重启会中断对话**：切换模型时正在进行的流式回复会被断开
 - **重启依赖进程管理**：`netstat` + `taskkill` 结束 8642 端口进程，仅验证过 Windows
 - **`deepseek-flash` 会被 Hermes 改写为 `deepseek-chat`**：这是 Hermes 的模型名规范化规则，官方 `deepseek-chat` 别名同样指向最新的 V4.1 Flash，实际效果一致，仅日志中显示为别名
+- **附件只传文件名，不传内容**：模型拿到的是 `[附件] 文件名`，需要自己用工具去读磁盘上的文件。PDF / Word / Excel 的内容解析尚未实现，白名单只解决"收得下"，不等于"读得懂"
+- **附件与会话无外键关联**：删会话的清理只覆盖网页端路径，直接调网关 API 删会话会残留附件目录
+- **未发送的附件刷新即丢**：选文件只预检不落盘，文件暂存在浏览器内存
+- **旧记录兼容**：`index.json` 里缺 `sent` 字段的历史记录会被当成待发附件，刷新时仍会显示成标签
 
 ## 开发提示
 
@@ -172,12 +280,41 @@ Hermes 原生支持 `/reasoning` 命令（`agent.reasoning_effort`），但这�
 - 修改 `backend\` 下任何 `.py` 后必须关闭并重开 `start.bat`
 - 切换模型后若页面发消息没反应，优先看浏览器控制台 Network 里的 `chat/stream` 请求状态码
 
+### 自检
+
+```powershell
+# 附件模块自检：格式/大小/文件头校验 + 落盘删除闭环，约 0.2 秒
+cd E:\hermes-web\backend; python attachments.py
+
+# 前端语法检查（改完 JS 必跑）
+node --check E:\hermes-web\frontend\js\attachments.js
+node --check E:\hermes-web\frontend\js\chat.js
+```
+
+自检会在 `backend\.attach-selfcheck\` 建临时根，跑完自动删除，不碰真实数据。
+
 ### 查看实际使用的模型
 
 问模型"你是什么模型"**不可靠**（模型按训练时的自我认知回答）。看日志才准：
 
 ```powershell
 Select-String "$env:USERPROFILE\.hermes\logs\agent.log" -Pattern 'API call #' | Select-Object -Last 5
+```
+
+### 查看附件
+
+```powershell
+# 列出所有带附件的会话
+Get-ChildItem "$env:USERPROFILE\.hermes\sessions" -Directory |
+  Where-Object { Test-Path (Join-Path $_.FullName 'attachments') } |
+  ForEach-Object {
+    $idx = Join-Path $_.FullName 'attachments\index.json'
+    [pscustomobject]@{
+      会话ID = $_.Name
+      时间   = if (Test-Path $idx) { (Get-Item $idx).LastWriteTime } else { $_.LastWriteTime }
+      附件数 = if (Test-Path $idx) { @(Get-Content $idx -Raw | ConvertFrom-Json).Count } else { 0 }
+    }
+  } | Sort-Object 时间 -Descending | Format-Table -AutoSize
 ```
 
 ## 配置
@@ -188,4 +325,6 @@ Select-String "$env:USERPROFILE\.hermes\logs\agent.log" -Pattern 'API call #' | 
 |---|---|
 | 网关密钥 `API_SERVER_KEY` | 浏览器 localStorage（首次打开时填写） |
 | 当前模型与供应商 | `~/.hermes/config.yaml` |
-| 会话列表 | Hermes Gateway 的会话存储 |
+| 会话列表与消息 | `~/.hermes/state.db`（Hermes Gateway 管理） |
+| 附件文件与元数据 | `~/.hermes/sessions/<会话ID>/attachments/` |
+| 当前会话 ID | 浏览器 localStorage（`hermes.currentWs`） |

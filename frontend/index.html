@@ -46,9 +46,12 @@
       <div id="input-row">
         <input id="input" type="text" placeholder="跟 Hermes 说点什么..." autocomplete="off">
       </div>
+      <div id="file-chips"></div>
       <div id="btn-row">
+        <button id="file-btn" type="button" title="文件" aria-label="上传文件">📎</button>
+        <input id="file-input" type="file" multiple hidden>
         <div id="reasoning-wrap">
-          <button id="reasoning-btn" type="button" title="推理强度（切换会重启网关）"><span id="reasoning-name">默认</span></button>
+          <button id="reasoning-btn" type="button" title="推理强度"><span id="reasoning-name">默认</span></button>
           <div id="reasoning-pop"></div>
         </div>
         <button id="send-btn" type="button">发送</button>
@@ -78,14 +81,14 @@
     <h2>切换模型</h2>
     <label class="mf-label">供应商</label>
     <div id="model-provider-wrap">
-      <input id="model-provider" type="text" autocomplete="off" placeholder="输入名称筛选，或从下拉里选">
+      <input id="model-provider" type="text" autocomplete="off" placeholder="输入名称">
       <span id="provider-arrow" title="展开供应商列表">▼</span>
       <div id="provider-pop"></div>
     </div>
     <div class="mf-gap"></div>
     <label class="mf-label">模型</label>
     <div id="model-select-wrap">
-      <input id="model-select" type="text" autocomplete="off" placeholder="输入名称筛选，或从下拉里选">
+      <input id="model-select" type="text" autocomplete="off" placeholder="输入名称">
       <span id="model-arrow" title="展开模型列表">▼</span>
       <div id="model-pop"></div>
     </div>

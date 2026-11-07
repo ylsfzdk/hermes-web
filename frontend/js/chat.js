@@ -5,6 +5,10 @@
 import { API_BASE } from "./common.js";
 import { getCfg } from "./config.js";
 import { openCfg } from "./config.js";
+import {
+  attachmentNames, bindAttachments, commitPending, hasAttachments, setAttachmentSession
+} from "./attachments.js";
+import { hooks as attachmentHooks } from "./attachments.js";
 
 const CUR_WS = "hermes.currentWs";
 
@@ -128,9 +132,18 @@ async function deleteSession(id) {
     showError("删除失败：" + e.message);
     return;
   }
+  // 网关只删 state.db 里的记录，sessions/<id>/ 目录还在，附件得自己清
+  try {
+    const res = await fetch(API_BASE + "/_attachments?session_id=" + encodeURIComponent(id),
+      { method: "DELETE" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+  } catch (e) {
+    showError("会话已删除，但附件目录清理失败：" + e.message);
+  }
   if (id === currentId) {
     currentId = null;
     localStorage.removeItem(CUR_WS);
+    setAttachmentSession(null);
     chatInner.innerHTML = "";
     topbarTitle.textContent = "Hermes Web";
   }
@@ -142,6 +155,7 @@ export async function switchSession(id) {
   if (controller) { controller.abort(); controller = null; }
   currentId = id;
   localStorage.setItem(CUR_WS, id);
+  setAttachmentSession(id);
   chatInner.innerHTML = "";
   renderWsList();
 
@@ -182,16 +196,24 @@ async function createWorkspace() {
 }
 
 // ============ 发消息 ============
+let streaming = false;   // 正在生成，此时按钮是"停止"，永远可点
+
+// 输入框没字、也没有附件时，发送按钮不可选，悬停也不变色
+function refreshSendState() {
+  const usable = !!(input.value.trim() || hasAttachments());
+  sendBtn.disabled = !streaming && !usable;
+}
+
 function setBusy(busy) {
+  streaming = busy;
   if (busy) {
     sendBtn.textContent = "停止";
     sendBtn.classList.add("stop");
-    sendBtn.disabled = false;
   } else {
     sendBtn.textContent = "发送";
     sendBtn.classList.remove("stop");
-    sendBtn.disabled = false;
   }
+  refreshSendState();
 }
 
 async function ensureSession(firstText) {
@@ -221,15 +243,24 @@ async function buildHistory(sid) {
     .map(m => ({ role: m.role, content: String(m.content) }));
 }
 
-async function sendMessage(text) {
-  addMsg("user", text);
+async function sendMessage(text, names = []) {
+  const sid0 = await ensureSession(text);
+  // 附件在点发送这一刻才真正写盘；写失败就不发，把消息留在输入框
+  const failed = await commitPending();
+  if (failed) { showError(failed); loadSessions(); return; }
+
+  // 附件只随这条消息进上下文：把文件名交代清楚，模型自己去读
+  const shown = names.length
+    ? `[附件] ${names.join("、")}\n${text}`
+    : text;
+  addMsg("user", shown);
   input.value = "";
   setBusy(true);
 
   let toolCard = null;
 
   try {
-    const sid = await ensureSession(text);
+    const sid = sid0 || await ensureSession(text);
     const history = await buildHistory(sid);
 
     // 走 /v1/chat/completions 而不是 /api/sessions/{id}/chat/stream：
@@ -242,7 +273,7 @@ async function sendMessage(text) {
       body: JSON.stringify({
         model: "hermes-agent",
         stream: true,
-        messages: [...history, { role: "user", content: text }]
+        messages: [...history, { role: "user", content: shown }]
       }),
       signal: controller.signal
     });
@@ -349,9 +380,10 @@ async function sendMessage(text) {
 sendBtn.addEventListener("click", () => {
   if (controller) { controller.abort(); return; }
   const text = input.value.trim();
-  if (!text) return;
+  const names = attachmentNames();
+  if (!text && !names.length) return;
   if (!getCfg()) { openCfg(); return; }
-  sendMessage(text);
+  sendMessage(text, names);
 });
 
 input.addEventListener("keydown", (e) => {
@@ -361,7 +393,18 @@ input.addEventListener("keydown", (e) => {
   }
 });
 
+input.addEventListener("input", refreshSendState);
+
 newWsBtn.addEventListener("click", createWorkspace);
+
+bindAttachments({
+  ensureSession: () => ensureSession(""),
+  notify: showError,
+});
+
+// 选文件 / 删标签 / 换会话后，发送按钮的可选状态跟着变
+attachmentHooks.changed = refreshSendState;
+refreshSendState();
 
 toggleBtn.addEventListener("click", () => {
   sidebar.classList.toggle("collapsed");

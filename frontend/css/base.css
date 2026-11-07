@@ -78,6 +78,26 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
                gap: 4px; border: 1px solid #ddd; border-radius: 16px; padding: 8px 10px; }
 #input-row { display: flex; }
 #btn-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+/* 附件按钮：贴在输入框这一行最左边，正圆，宽高都等于推理强度按钮的高度 */
+#file-btn { --btn-h: calc(13px * 1.2 + 20px);  /* 推理按钮：13px 字号 + 上下 10px 内边距 */
+            margin-right: auto; flex-shrink: 0; width: var(--btn-h); height: var(--btn-h);
+            padding: 0; border-radius: 50%; font-size: 16px; line-height: 1;
+            display: inline-flex; align-items: center; justify-content: center;
+            background: none; border: none; color: #666; cursor: pointer; }
+#file-btn:hover { background: #ececec; }
+#file-btn:disabled { opacity: .45; cursor: default; background: none; }
+#file-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+#file-chips:empty { display: none; }
+.file-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 240px;
+             padding: 4px 8px 4px 10px; border-radius: 12px; background: #f1f3f4;
+             font-size: 12px; color: #333; }
+.file-chip.bad { background: #fdecea; color: #c62828; }
+.file-chip .chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip .chip-meta { color: #999; flex-shrink: 0; }
+.file-chip.bad .chip-meta { color: #c62828; }
+.file-chip .chip-x { background: none; border: none; color: #999; font-size: 14px;
+                     line-height: 1; padding: 0 2px; cursor: pointer; }
+.file-chip .chip-x:hover { color: #d32f2f; }
 #reasoning-wrap { position: relative; flex-shrink: 0; }
 /* 档位按钮无边框 */
 #reasoning-btn { flex-shrink: 0; padding: 10px 14px; border-radius: 24px; font-size: 13px;
@@ -99,11 +119,12 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 /* 输入框无边框 */
 #input { flex: 1; padding: 12px 10px; border: none; outline: none; background: none;
          font-size: 15px; font-family: inherit; }
-/* 发送按钮：浅蓝底，悬停变蓝 */
+/* 发送按钮：浅蓝底，悬停变蓝；不可用时保持浅蓝，只是不响应 hover */
 #send-btn { padding: 12px 24px; background: #a8c7fa; color: #fff; border: none;
             border-radius: 24px; font-size: 15px; cursor: pointer; white-space: nowrap; }
 #send-btn:hover { background: #1a73e8; }
-#send-btn:disabled { background: #aaa; cursor: not-allowed; }
+#send-btn:disabled { background: #a8c7fa; cursor: default; }
+#send-btn:disabled:hover { background: #a8c7fa; }
 #send-btn.stop { background: #a8c7fa; }
 #send-btn.stop:hover { background: #1a73e8; }
 

@@ -10,6 +10,7 @@ import mimetypes
 import socketserver
 import sys
 
+import attachments
 import model_api
 import proxy
 from config_paths import BACKEND, PROXY_PREFIXES, ROOT
@@ -29,6 +30,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _is_proxy(self):
         return self.path.startswith(PROXY_PREFIXES)
 
+    def _is_attachments(self):
+        path = self.path.split("?", 1)[0]
+        return path == "/_attachments" or path.startswith("/_attachments/")
+
     def _json(self, obj, status=200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -41,6 +46,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/_model":
             return model_api.get(self)
+        if self._is_attachments():
+            return attachments.listing(self)
         if self._is_proxy():
             return proxy.proxy(self, "GET")
         super().do_GET()
@@ -50,11 +57,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return model_api.switch(self)
         if self.path == "/_reasoning":
             return model_api.reasoning(self)
+        if self._is_attachments():
+            if self.path.split("?", 1)[0].endswith("/sent"):
+                return attachments.sent(self)
+            return attachments.upload(self)
         if self._is_proxy():
             return proxy.proxy(self, "POST")
         self.send_error(404)
 
     def do_DELETE(self):
+        if self._is_attachments():
+            # 裸 /_attachments?session_id=xxx 是"删整个会话的附件目录"
+            if self.path.split("?", 1)[0].rstrip("/") == "/_attachments":
+                return attachments.purge(self)
+            return attachments.delete(self)
         if self._is_proxy():
             return proxy.proxy(self, "DELETE")
         self.send_error(404)
