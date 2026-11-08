@@ -143,6 +143,7 @@ async function deleteSession(id) {
   if (id === currentId) {
     currentId = null;
     localStorage.removeItem(CUR_WS);
+    clearDraft(id);
     setAttachmentSession(null);
     chatInner.innerHTML = "";
     topbarTitle.textContent = "Hermes Web";
@@ -150,12 +151,43 @@ async function deleteSession(id) {
   await loadSessions();
 }
 
+// ============ 草稿 ============
+// 按会话 ID 存 localStorage，切走时写、切回时读、发出去了就删。
+// 没发出去的输入框内容换个会话再回来还在，刷新也不丢。
+const DRAFT_PREFIX = "hermes.draft.";
+
+function saveDraft(sid, text) {
+  if (!sid) return;
+  try {
+    if (text.trim()) localStorage.setItem(DRAFT_PREFIX + sid, text);
+    else localStorage.removeItem(DRAFT_PREFIX + sid);
+  } catch (e) {}   // 隐私模式/配额满，草稿丢了也不该影响聊天
+}
+
+function loadDraft(sid) {
+  if (!sid) return "";
+  try { return localStorage.getItem(DRAFT_PREFIX + sid) || ""; } catch (e) { return ""; }
+}
+
+function clearDraft(sid) {
+  if (!sid) return;
+  try { localStorage.removeItem(DRAFT_PREFIX + sid); } catch (e) {}
+}
+
 // ============ 切换 / 新建会话 ============
 export async function switchSession(id) {
   if (controller) { controller.abort(); controller = null; }
+  // 离开当前会话：把没发出去的输入框内容存成草稿
+  if (currentId && currentId !== id) saveDraft(currentId, input.value);
+  const sameSession = currentId === id;
   currentId = id;
   localStorage.setItem(CUR_WS, id);
   setAttachmentSession(id);
+  // 切回会话或刷新页面时读这个会话的草稿。
+  // 有草稿就填，没有就清空——别留着上个会话的字。
+  // 同一会话重载（改配置）时输入框里已经有字，不覆盖
+  if (!sameSession || !input.value.trim()) input.value = loadDraft(id);
+  refreshSendState();
   chatInner.innerHTML = "";
   renderWsList();
 
@@ -257,6 +289,9 @@ async function sendMessage(text, names = []) {
   input.value = "";
   setBusy(true);
 
+  // 用户消息已经进了上下文，从这里开始就算"发送成功"，草稿该删了。
+  // 之后无论是模型报错还是用户点停止，都不该把文字塞回输入框。
+  let ok = false;
   let toolCard = null;
 
   try {
@@ -283,6 +318,9 @@ async function sendMessage(text, names = []) {
       try { detail = (await res.json()).error?.message || ""; } catch (e) {}
       throw new Error("HTTP " + res.status + (detail ? " - " + detail : ""));
     }
+    ok = true;              // 请求已被接受，用户消息落进会话了
+    clearDraft(sid);
+    clearDraft(sid0);       // 首轮发送时 sid0 可能还是 null，这里补一刀旧的
 
     const bubble = addMsg("assistant", "");
     let fullText = "";
@@ -369,6 +407,11 @@ async function sendMessage(text, names = []) {
       addMsg("system", "错误：" + err.message);
     }
   } finally {
+    // 没发出去（网络断了/服务器拒了）：文字放回输入框，草稿也留着
+    if (!ok) {
+      if (!input.value.trim()) input.value = text;
+      saveDraft(currentId, input.value);
+    }
     controller = null;
     setBusy(false);
     input.focus();
@@ -394,6 +437,17 @@ input.addEventListener("keydown", (e) => {
 });
 
 input.addEventListener("input", refreshSendState);
+
+// 离开页面（刷新/关标签页）前把输入框内容存成草稿。
+// beforeunload 里只能跑同步代码，localStorage.setItem 正好是同步的。
+window.addEventListener("beforeunload", () => {
+  saveDraft(currentId, input.value);
+});
+
+// 手机切后台/切 App 时 beforeunload 常常不触发，用 visibilitychange 补一刀
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") saveDraft(currentId, input.value);
+});
 
 newWsBtn.addEventListener("click", createWorkspace);
 

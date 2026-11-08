@@ -73,7 +73,7 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 
 /* 输入区：整条不带边框，只有底下一道分隔线 */
 #input-bar { padding: 16px; background: #fff; border: none; }
-/* 两层：上面输入框，下面一排按钮 */
+/* 三层：上面附件标签，中间输入框，下面一排按钮 */
 #input-inner { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column;
                gap: 4px; border: 1px solid #ddd; border-radius: 16px; padding: 8px 10px; }
 #input-row { display: flex; }

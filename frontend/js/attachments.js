@@ -213,8 +213,8 @@ async function listFiles() {
     if (json && json.ok && Array.isArray(json.files)) {
       const pending = files.filter(f => f.pending || f.error);
       files = pending.concat(
-        json.files.filter(x => x.sent).map(x => ({
-          name: x.name, type: x.type, size: x.size, error: "发送失败，点 × 移除或重新选择"
+        json.files.filter(x => x.sent === false).map(x => ({
+          id: x.id, name: x.name, type: x.type, size: x.size
         })));
       render();
     }
