@@ -1,7 +1,9 @@
-"""GET / POST /_model：查询和切换当前模型。"""
+"""GET / POST /_model：查询和切换当前模型。
+
+只改 config.yaml，不碰网关进程——网关由用户手动重启才会读新配置。
+"""
 import json
 
-import gateway
 import hermes_config as cfg
 
 
@@ -18,30 +20,18 @@ def get(handler):
 
 
 def _apply(handler, patch):
-    """改 config.yaml（模型 / 推理档位）并按需重启网关。
+    """改 config.yaml（模型 / 推理档位），不重启网关。
 
     返回 (ok, err, backup)；没改动任何东西时 backup 为 None。
     """
-    old_provider = cfg.read_config_model().get("provider")
     backup = patch()
     if backup is None:
         return True, None, None
-    ok, err = gateway.restart()
-    if ok:
-        return True, None, backup
-    # 配置已写但网关起不来：还原 config.yaml，再用旧配置重启一次
-    restored = cfg.restore_config(backup)
-    if restored:
-        back_ok, back_err = gateway.restart()
-        if not back_ok:
-            err = str(err) + "；回滚后网关仍起不来：" + str(back_err)
-    else:
-        err = str(err) + "；回滚失败，请手动还原 " + str(backup)
-    return False, "已回滚到 " + str(old_provider) + "：" + str(err), backup
+    return True, None, backup
 
 
 def switch(handler):
-    """只切模型：改 config.yaml → 写模型缓存 → 重启网关。"""
+    """只切模型：改 config.yaml + 写模型缓存。网关要手动重启才生效。"""
     try:
         n = int(handler.headers.get("Content-Length") or 0)
         body = json.loads(handler.rfile.read(n).decode("utf-8")) if n else {}
@@ -74,7 +64,7 @@ def switch(handler):
 
 
 def reasoning(handler):
-    """POST /_reasoning：改 agent.reasoning_effort，网关重启后生效。"""
+    """POST /_reasoning：改 agent.reasoning_effort，网关要手动重启才生效。"""
     try:
         n = int(handler.headers.get("Content-Length") or 0)
         body = json.loads(handler.rfile.read(n).decode("utf-8")) if n else {}

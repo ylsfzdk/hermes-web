@@ -87,6 +87,12 @@ export async function loadSessions() {
   } catch (e) {
     sessions = [];
   }
+  // localStorage 里的当前会话可能早被删了（网关只删 state.db，前端不会跟着变）。
+  // 列表拉到了就以网关为准核对一次，失效的 ID 直接丢弃，别拿着它去请求 404。
+  if (currentId && sessions.length && !sessions.some(x => x.id === currentId)) {
+    currentId = null;
+    localStorage.removeItem(CUR_WS);
+  }
   renderWsList();
 }
 

@@ -11,7 +11,7 @@
 - **切换模型**：选择供应商 → 选择模型 → 填 API Key / API 地址 → 确认，自动改写配置并重启网关
 - 供应商按前缀过滤、模型按包含过滤，均为浮层下拉（本机目录 235 家供应商 / 8944 个模型，随 `models_dev_cache.json` 变化）
 - 工具调用过程可见（运行中 → ✓ 完成 / ✗ 失败）
-- **会话级附件**：输入行左侧 📎 按钮选文件，84 种格式 + 20 MB 上限 + 文件头校验，按会话存到 `~/.hermes/sessions/<会话ID>/attachments/`
+- **会话级附件**：输入行左侧 📎 按钮选文件，84 种格式 + 20 MB 上限 + 文件头校验，按会话存到 `<HERMES_HOME>/sessions/<会话ID>/attachments/`
 - 生成中可中断（发送按钮变「停止」）
 - 输入框没字也没有附件时，发送按钮不可用
 - 局域网内手机浏览器直接访问，窄屏自动收起侧栏
@@ -19,22 +19,29 @@
 
 ## 前置要求
 
-1. 已安装 Hermes Agent（`pip install hermes-agent`）
-2. 已在 `~/.hermes/.env` 中配置：
+1. 已安装 Hermes Agent，要求 **源码启动**：本仓库同级目录 `E:\hermes-agent-0.23.1\`
+2. 源码树里有可用的 `.venv\Scripts\python.exe`（它的 site-packages 里没有 hermes 源码，靠 `PYTHONPATH` + cwd 指到源码树才能 import）
+3. 数据目录是源码树下的 `.hermes-home\`，在它的 `.env` 里配置（**都在这里配，不要只靠系统环境变量**）：
 
 ```
+DEEPSEEK_API_KEY=sk-...             # 模型密钥：网关不读 User/系统环境变量，只读这个文件
+DEEPSEEK_BASE_URL=https://api.deepseek.com
 API_SERVER_ENABLED=true
-API_SERVER_KEY=your-secret-key
-API_SERVER_HOST=0.0.0.0
+API_SERVER_KEY=<16 位以上的随机串>    # 网页端要填的同一个值
+API_SERVER_HOST=127.0.0.1           # 只给本机网页服务器代理用
 ```
 
-3. Python 3.x
+> 踩过的坑：`DEEPSEEK_API_KEY` 只放在 Windows 用户环境变量里时，`hermes` 报 `No usable credentials found for provider 'deepseek'`，网页端表现为回复「couldn't connect to the AI model service」。写进 `.hermes-home\.env` 才生效。
+>
+> 源码树路径默认由 `backend\config_paths.py` 按 `..\hermes-agent-0.23.1` 算出来（`HERMES_SRC`），数据目录是 `HERMES_HOME`（默认 `<源码树>\.hermes-home`）。源码树搬家时改 `HERMES_SRC` 环境变量或那一行常量即可，`attachments.py` / `hermes_config.py` / `gateway.py` 都跟着走。
+>
+> PATH 上的 `hermes.exe` 可能是旧的 pip 安装，**不要用**。网关一律通过 `.venv\Scripts\python.exe -m hermes_cli.main gateway` 启动。
 
 > 同源代理改造后**不再需要** `API_SERVER_CORS_ORIGINS`——页面和网关都通过 3000 端口，不存在跨域。
 
 ## 快速启动
 
-双击 `start.bat`，会自动启动 Hermes Gateway（若未运行）和网页服务器。
+双击 `start.bat`，会检查 `..\hermes-agent-0.23.1\.venv\Scripts\python.exe` 是否存在，端口 8642 没起就用源码树启动网关，再起网页服务器。
 
 然后浏览器打开 http://localhost:3000
 
@@ -70,7 +77,7 @@ E:\hermes-web\
 │   ├── attachments.py    /_attachments 上传/列表/删除：格式白名单 + 文件头探测 + 20 MB 上限
 │   ├── proxy.py          /api/、/v1/、/health 反向代理（SSE 逐块转发）
 │   ├── model_api.py      GET/POST /_model 查询与切换模型、POST /_reasoning 切推理档位（含失败回滚）
-│   ├── hermes_config.py  读写 ~/.hermes/config.yaml 与模型缓存
+│   ├── hermes_config.py  读写 <HERMES_HOME>\config.yaml 与模型缓存
 │   ├── gateway.py        结束端口进程、重启 hermes gateway 并等就绪
 │   └── config_paths.py   路径 / 端口 / 代理前缀常量
 ├── start.bat     启动器（拉网关 + 起网页服务）
@@ -122,7 +129,7 @@ E:\hermes-web\
 与会话 ID 绑定，和 Hermes 自己的会话数据放在一起：
 
 ```
-~/.hermes/sessions/<会话ID>/
+<HERMES_HOME>/sessions/<会话ID>/
 ├── attachments/
 │   ├── index.json           元数据数组（原名 / 类型 / 大小 / 随机存储名 / 时间 / sent）
 │   └── <随机名>.<ext>       文件本体（存储名不跟原名走，避免路径注入和同名覆盖）
@@ -164,13 +171,13 @@ API 地址  [文本框]       ← 留空则不修改
 
 点「确认」后依次执行：
 
-1. 改写 `~/.hermes/config.yaml` 的 `model:` 段（`provider` / `name` / `default` / `api_key` / `base_url`），原文件备份为 `config.yaml.bak`
-2. 把选中的供应商写回 `~/.hermes/provider_models_cache.json`
+1. 改写 `<HERMES_HOME>/config.yaml` 的 `model:` 段（`provider` / `name` / `default` / `api_key` / `base_url`），原文件备份为 `config.yaml.bak`
+2. 把选中的供应商写回 `<HERMES_HOME>/provider_models_cache.json`
 3. 结束占用 8642 端口的进程并重启网关，最多等 40 秒；起不来自动还原 `config.yaml.bak` 并用旧配置再重启一次，期间对话会中断
 
 模型与供应商都没变、也没填 Key / 地址时，「确认」直接关闭面板，不重启网关。
 
-> **注意**：供应商列表来自 `~/.hermes/models_dev_cache.json`（只读）。切到没配置过 key 的供应商时，必须同时填 API Key 和 API 地址，否则会鉴权失败。
+> **注意**：供应商列表来自 `<HERMES_HOME>/models_dev_cache.json`（只读）。切到没配置过 key 的供应商时，必须同时填 API Key 和 API 地址，否则会鉴权失败。
 
 ## 后端接口
 
@@ -251,7 +258,7 @@ Hermes 原生支持 `/reasoning` 命令（`agent.reasoning_effort`），但这�
 
 左下角 **⚙ 设置 → 推理强度** 点一下循环切档：`默认 → none → minimal → low → medium → high → xhigh → 默认`。
 
-- 改的是 `~/.hermes/config.yaml` 的 `agent.reasoning_effort`，和原来一样先备份成 `.bak`，再重启网关（对话会中断）
+- 改的是 `<HERMES_HOME>/config.yaml` 的 `agent.reasoning_effort`，和原来一样先备份成 `.bak`，再重启网关（对话会中断）
 - 值没变则不写文件、不重启
 - `默认` 是不设该键，由 Hermes/供应商自己决定（DeepSeek 官方端默认 `high`）
 - DeepSeek 实际映射：`low` / `medium` / `high` 原样传 `reasoning_effort`，`xhigh` → `max`；
@@ -286,6 +293,12 @@ Hermes 原生支持 `/reasoning` 命令（`agent.reasoning_effort`），但这�
 # 附件模块自检：格式/大小/文件头校验 + 落盘删除闭环，约 0.2 秒
 cd E:\hermes-web\backend; python attachments.py
 
+# 配置读写自检：真实 config.yaml 形状（注释段在前、agent 在 model 前）
+cd E:\hermes-web\backend; python hermes_config.py
+
+# 路径自检：源码树 / 数据目录 / venv 解释器是否都在
+cd E:\hermes-web\backend; python -c "import config_paths as c, os; print(c.HERMES_SRC, c.HERMES_DIR, os.path.isfile(c.HERMES_PY))"
+
 # 前端语法检查（改完 JS 必跑）
 node --check E:\hermes-web\frontend\js\attachments.js
 node --check E:\hermes-web\frontend\js\chat.js
@@ -298,14 +311,14 @@ node --check E:\hermes-web\frontend\js\chat.js
 问模型"你是什么模型"**不可靠**（模型按训练时的自我认知回答）。看日志才准：
 
 ```powershell
-Select-String "$env:USERPROFILE\.hermes\logs\agent.log" -Pattern 'API call #' | Select-Object -Last 5
+Select-String "E:\hermes-agent-0.23.1\.hermes-home\logs\agent.log" -Pattern 'API call #' | Select-Object -Last 5
 ```
 
 ### 查看附件
 
 ```powershell
 # 列出所有带附件的会话
-Get-ChildItem "$env:USERPROFILE\.hermes\sessions" -Directory |
+Get-ChildItem "E:\hermes-agent-0.23.1\.hermes-home\sessions" -Directory |
   Where-Object { Test-Path (Join-Path $_.FullName 'attachments') } |
   ForEach-Object {
     $idx = Join-Path $_.FullName 'attachments\index.json'
@@ -324,7 +337,7 @@ Get-ChildItem "$env:USERPROFILE\.hermes\sessions" -Directory |
 | 配置 | 存放位置 |
 |---|---|
 | 网关密钥 `API_SERVER_KEY` | 浏览器 localStorage（首次打开时填写） |
-| 当前模型与供应商 | `~/.hermes/config.yaml` |
-| 会话列表与消息 | `~/.hermes/state.db`（Hermes Gateway 管理） |
-| 附件文件与元数据 | `~/.hermes/sessions/<会话ID>/attachments/` |
+| 当前模型与供应商 | `<HERMES_HOME>/config.yaml` |
+| 会话列表与消息 | `<HERMES_HOME>/state.db`（Hermes Gateway 管理） |
+| 附件文件与元数据 | `<HERMES_HOME>/sessions/<会话ID>/attachments/` |
 | 当前会话 ID | 浏览器 localStorage（`hermes.currentWs`） |

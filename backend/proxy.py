@@ -1,7 +1,11 @@
-"""同源反向代理：把 /api/、/v1/、/health 转发给 Hermes Gateway。"""
+"""同源反向代理：把 /api/、/v1/、/health 转发给 Hermes Gateway。
+
+8642 连不上时调 launch_gateway.ensure() 把网关拉起来；请求本身照样返回 502。
+"""
 import urllib.error
 import urllib.request
 
+import launch_gateway
 from config_paths import BACKEND
 
 
@@ -20,6 +24,9 @@ def proxy(handler, method):
     except urllib.error.HTTPError as e:
         resp = e
     except Exception as e:
+        # 连不上：网关挂了或没起，拉一个（可能已在冷启动，ensure 自己会去重）
+        if not launch_gateway.is_up():
+            launch_gateway.ensure(label="proxy %s %s" % (method, handler.path.split("?")[0]))
         handler.send_error(502, "proxy error: %s" % e)
         return
 

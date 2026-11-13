@@ -18,23 +18,35 @@ def _yaml_str(v):
     return json.dumps(v)
 
 
+def _top_level(text, name):
+    """顶层段 name: 的段头下标；注释行和缩进行都不算。"""
+    for i, line in enumerate(text.splitlines()):
+        s = line.split("#", 1)[0].rstrip()
+        if s.startswith(name + ":") and s == s.lstrip():
+            return i
+    return None
+
+
 def _section(text, name):
     """返回顶层段 name: 下的所有行（不含段头）；段不存在返回 []。"""
     lines = text.splitlines()
-    for i, line in enumerate(lines):
-        if line.startswith(name + ":"):
-            out = []
-            for nxt in lines[i + 1:]:
-                if nxt.strip() and not nxt[0].isspace():
-                    break
-                out.append(nxt)
-            return out
-    return []
+    start = _top_level(text, name)
+    if start is None:
+        return []
+    out = []
+    for nxt in lines[start + 1:]:
+        if nxt.strip() and not nxt[0].isspace():
+            break
+        out.append(nxt)
+    return out
 
 
 def _section_get(text, section, key):
     for line in _section(text, section):
         s = line.strip()
+        if s.startswith("#"):
+            continue
+        s = s.split("#", 1)[0].rstrip() if "#" in s else s
         if s.startswith(key + ":"):
             return s.split(":", 1)[1].strip()
     return None
@@ -42,7 +54,8 @@ def _section_get(text, section, key):
 
 def _section_set(lines, section, key, value):
     """过程化改 YAML：段内改/加一行，段不存在就新建。"""
-    start = next((i for i, l in enumerate(lines) if l.startswith(section + ":")), None)
+    start = next((i for i, l in enumerate(lines)
+                  if not l.startswith((" ", "\t", "#")) and l.startswith(section + ":")), None)
     if start is None:
         if lines and not lines[-1].endswith("\n"):
             lines[-1] += "\n"
@@ -91,27 +104,34 @@ def _write_text(text):
 
 
 def read_config_model():
-    """从 config.yaml 读当前模型、供应商与推理档位。"""
-    text = _read_text()
-    inside = False
+    """从 config.yaml 读当前模型、供应商与推理档位。
+
+    model: 段和 agent: 段谁在前都可能（新版 config.yaml 里 agent 在 model 前面），
+    所以按段找，不按文件顺序扫。
+    """
+    return read_config_model_text(_read_text())
+
+
+def read_config_model_text(text):
+    """按 config.yaml 文本解析（自检直接喂字符串，不碰磁盘）。"""
     provider = current = base_url = None
     has_key = False
-    for line in text.splitlines():
-        if line.startswith("model:"):
-            inside = True
+    for s in (_section(text, "model")):
+        s = s.strip()
+        if s.startswith("#"):
             continue
-        if inside:
-            if line.strip() and not line[0].isspace():
-                break
-            s = line.strip()
-            if s.startswith("provider:") and provider is None:
-                provider = s.split(":", 1)[1].strip() or None
-            elif s.startswith("default:") and current is None:
-                current = s.split(":", 1)[1].strip() or None
-            elif s.startswith("base_url:") and base_url is None:
-                base_url = s.split(":", 1)[1].strip() or None
-            elif s.startswith("api_key:") and not has_key:
-                has_key = (s.split(":", 1)[1].strip() or "null") not in ("null", "''", '""')
+        s = s.split("#", 1)[0].rstrip() if "#" in s else s
+        if s.startswith("provider:") and provider is None:
+            provider = s.split(":", 1)[1].strip() or None
+        elif s.startswith("default:") and current is None:
+            current = s.split(":", 1)[1].strip() or None
+        elif s.startswith("base_url:") and base_url is None:
+            base_url = s.split(":", 1)[1].strip() or None
+        elif s.startswith("api_key:") and not has_key:
+            has_key = (s.split(":", 1)[1].strip() or "null") not in ("null", "''", '""')
+    if current is None:
+        # 只有 name: 没有 default: 时 hermes 实际取 name:
+        current = (_section_get(text, "model", "name") or "").strip() or None
     return {"provider": provider, "current": current,
             "base_url": base_url, "has_key": has_key,
             "reasoning": (_section_get(text, "agent", "reasoning_effort") or "")
@@ -139,6 +159,36 @@ if __name__ == "__main__":
     assert out2 == 'model:\nagent:\n  reasoning_effort: "x"\n', repr(out2)
     assert _section_get("agent:\n  reasoning_effort: high\n", "agent", "reasoning_effort") == "high"
     assert _yaml_str("") == '""' and _yaml_str("high") == "high"
+
+    # 新版 config.yaml 的真实形状：大段注释在前，agent: 在 model: 之前，段内还有注释
+    real = (
+        "agent:\n  max_turns: 150\n  reasoning_effort: medium\n"
+        "_config_version: 53\n"
+        "# ── Fallback Model ──\n# fallback_model:\n#   provider: openrouter\n"
+        "model:\n  default: deepseek-flash\n  provider: deepseek\n"
+        "  base_url: https://api.deepseek.com  # 官方端点\n"
+        "gateway:\n  service_install_choice: decline\n"
+    )
+    info = read_config_model_text(real)
+    assert info["provider"] == "deepseek", info
+    assert info["current"] == "deepseek-flash", info
+    assert info["base_url"] == "https://api.deepseek.com", info
+    assert info["reasoning"] == "medium", info
+
+    # 改模型：只动 model 段里的两行，行尾注释留着，别的段一个字不变
+    lines = real.splitlines(True)
+    start = next(i for i, l in enumerate(lines) if l.startswith("model:"))
+    end = next(i for i in range(start + 1, len(lines)) if not lines[i][0].isspace())
+    for i in range(start + 1, end):
+        s = lines[i].lstrip()
+        ind = lines[i][:len(lines[i]) - len(s)]
+        if s.startswith("default:"):
+            lines[i] = ind + "default: deepseek-v4-pro\n"
+        elif s.startswith("base_url:"):
+            lines[i] = ind + "base_url: https://x/v1  # 官方端点\n"
+    out = "".join(lines)
+    assert "default: deepseek-v4-pro" in out and "# 官方端点" in out, out
+    assert out.startswith(real.split("model:")[0]), out
     print("ok")
 
 
@@ -195,59 +245,58 @@ def write_config_model(new_model, provider=None, base_url=None, api_key=None):
     with open(CONFIG, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
-    inside_model = False
+    # model 段头：跳过注释行和缩进行（新版 config.yaml 里 model: 前面有一大段注释）
+    start = next((i for i, l in enumerate(lines)
+                  if not l.startswith((" ", "\t", "#")) and l.startswith("model:")), None)
+    if start is None:
+        raise RuntimeError("config.yaml 里没找到顶层 model: 段")
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if lines[i].strip() and not lines[i][0].isspace():
+            end = i
+            break
+
     changed = False
     seen_provider = False
     seen_key = False
     provider_at = None  # model 段结束前最后一个 provider 行的下标
     key_at = None
 
-    for i, line in enumerate(lines):
-        if line.startswith("model:"):
-            inside_model = True
+    for i in range(start + 1, end):
+        line = lines[i]
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
             continue
-        if inside_model:
-            # 遇到顶层键（非缩进、非空行）就离开 model 段
-            if line.strip() and not line[0].isspace():
-                break
-            stripped = line.lstrip()
-            indent = line[:len(line) - len(stripped)]
-            if stripped.startswith("provider:"):
-                provider_at = i
-                if provider and not seen_provider:
-                    lines[i] = indent + "provider: " + provider + "\n"
-                    seen_provider = True
-                continue
-            if stripped.startswith("api_key:"):
-                key_at = i
-                if api_key and not seen_key:
-                    lines[i] = indent + "api_key: " + json.dumps(api_key) + "\n"
-                    seen_key = True
-                continue
-            if stripped.startswith("base_url:") and base_url:
-                lines[i] = indent + "base_url: " + base_url + "\n"
-                continue
-            if stripped.startswith("default:"):
-                lines[i] = indent + "default: " + new_model + "\n"
-                changed = True
-                break
+        indent = line[:len(line) - len(stripped)]
+        if stripped.startswith("provider:"):
+            provider_at = i
+            if provider and not seen_provider:
+                lines[i] = indent + "provider: " + provider + "\n"
+                seen_provider = True
+            continue
+        if stripped.startswith("api_key:"):
+            key_at = i
+            if api_key and not seen_key:
+                lines[i] = indent + "api_key: " + json.dumps(api_key) + "\n"
+                seen_key = True
+            continue
+        if stripped.startswith("base_url:"):
+            if base_url:
+                # 只换值，保留行尾注释
+                comment = line.split("#", 1)[1] if "#" in line else ""
+                lines[i] = indent + "base_url: " + base_url
+                lines[i] += ("  #" + comment.rstrip() + "\n") if comment else "\n"
+            continue
+        if stripped.startswith("default:") and not changed:
+            lines[i] = indent + "default: " + new_model + "\n"
+            changed = True
+            continue
+        # hermes 实际取的是 name: 而不只是 default:，两个都改，否则切换不生效
+        if stripped.startswith("name:"):
+            lines[i] = indent + "name: " + new_model + "\n"
 
     if not changed:
         raise RuntimeError("config.yaml 的 model 段里没找到 default 字段")
-
-    # hermes 实际取的是 name: 而不是 default:，两个都改，否则切换不生效
-    for i, line in enumerate(lines):
-        if line.startswith("model:"):
-            inside_model = True
-            continue
-        if inside_model:
-            if line.strip() and not line[0].isspace():
-                break
-            stripped = line.lstrip()
-            if stripped.startswith("name:"):
-                indent = line[:len(line) - len(stripped)]
-                lines[i] = indent + "name: " + new_model + "\n"
-                break
 
     if provider and not seen_provider:
         if provider_at is None:
@@ -259,21 +308,31 @@ def write_config_model(new_model, provider=None, base_url=None, api_key=None):
             raise RuntimeError("config.yaml 的 model 段里没找到 api_key 字段")
         lines.insert(key_at + 1, "  api_key: " + json.dumps(api_key) + "\n")
 
-    # 先存改动前的原文，再写新内容；否则 .bak 和 config.yaml 一样新，没法回滚
-    backup = CONFIG + ".bak"
     with open(CONFIG, "r", encoding="utf-8", newline="") as f:
         old = f.read()
+    backup = _backup(old)
+    _write_lines(backup, lines)
+    return backup
+
+
+def _backup(old):
+    """先存改动前的原文，再写新内容；否则 .bak 和 config.yaml 一样新，没法回滚。"""
+    backup = CONFIG + ".bak"
     try:
         with open(backup, "w", encoding="utf-8", newline="") as f:
             f.write(old)
     except Exception:
-        backup = None
+        return None
+    return backup
 
+
+def _write_lines(backup, lines):
     try:
         with open(CONFIG, "w", encoding="utf-8", newline="") as f:
             f.writelines(lines)
     except PermissionError:
-        raise RuntimeError("没有权限修改 config.yaml，请用普通用户身份运行 start.bat")
+        raise RuntimeError("没有权限修改 config.yaml，请用普通用户身份运行 start.bat；"
+                           "或先给 %s 加写权限（同名 .bak 也要能写）" % CONFIG)
     return backup
 
 

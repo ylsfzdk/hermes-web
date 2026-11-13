@@ -26,12 +26,20 @@ const gearBtn = document.getElementById("gear-btn");
 
 export function closeSettings() { hide(settingsPop); }
 
+// 只存函数，避免与 config.js 循环依赖（两边互相 import 会触发 TDZ）
+const openers = { cfg: null, model: null };
+
+export function registerOpeners(cfgOpen, modelOpen) {
+  openers.cfg = cfgOpen;
+  openers.model = modelOpen;
+}
+
 export function toggleSettings() {
   if (settingsPop.classList.contains("show")) closeSettings();
   else {
     show(settingsPop);
     // 只在第一次打开时拉取，之后靠切换模型成功后刷新
-    if (typeof modelInfo === "undefined" || !modelInfo) loadModelInfo();
+    if (openers.model) openers.model.loadInfo();
   }
 }
 
@@ -43,7 +51,7 @@ export function bindSettingsMenu(onModel) {
 
   document.getElementById("row-key").addEventListener("click", () => {
     closeSettings();
-    openCfg();
+    openers.cfg();
   });
 
   document.getElementById("row-model").addEventListener("click", () => {

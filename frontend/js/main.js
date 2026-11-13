@@ -2,13 +2,16 @@
    入口：把各模块接起来，然后启动
    ============================================================ */
 
-import { bindSettingsMenu, hooks as settingsHooks } from "./common.js";
+import { bindSettingsMenu, registerOpeners, hooks as settingsHooks } from "./common.js";
 import * as chat from "./chat.js";
 import { getCfg, openCfg } from "./config.js";
 import { loadModelInfo, openModelPicker, hooks as modelHooks } from "./model.js";
 import { bindReasoning } from "./reasoning.js";
 
 const sidebar = document.getElementById("sidebar");
+
+// config.js ↔ common.js 互相 import 会撞 TDZ，弹窗入口从这里统一注入
+registerOpeners(openCfg, { loadInfo: loadModelInfo });
 
 // 配置改动 / 模型切换后重新拉一遍会话和当前会话
 const reload = async () => {

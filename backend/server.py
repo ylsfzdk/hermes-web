@@ -2,15 +2,17 @@
 Hermes Web 本地服务器：静态文件 + API 反向代理（同源，免 CORS）
 
 用法: python server.py [port]
-默认端口 3000，转发到 127.0.0.1:8642
+默认端口 3000，转发到 127.0.0.1:8642；网关交给 launch_gateway.py 拉起
 """
 import http.server
 import json
 import mimetypes
+import signal
 import socketserver
 import sys
 
 import attachments
+import launch_gateway
 import model_api
 import proxy
 from config_paths import BACKEND, PROXY_PREFIXES, ROOT
@@ -104,11 +106,30 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         super().handle_error(request, client_address)
 
 
+def _on_signal(signum, frame):
+    """SIGTERM / Ctrl+Break 也走正常退出路径。"""
+    raise KeyboardInterrupt
+
+
 if __name__ == "__main__":
     PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
-    with ThreadingServer(("", PORT), Handler) as httpd:
-        print("Serving on port %d  ->  %s" % (PORT, BACKEND))
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nStopped.")
+    sys.stdout.reconfigure(line_buffering=True, encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(line_buffering=True, encoding="utf-8", errors="replace")
+
+    signal.signal(signal.SIGTERM, _on_signal)
+
+    # 起网关（8642 已有监听就复用）。网关的输出直接继承这个窗口。
+    # 起不来的话 proxy 每次收到 /api/* 还会再调一次 launch_gateway.ensure() 重试。
+    launch_gateway.ensure(label="startup")
+
+    try:
+        with ThreadingServer(("", PORT), Handler) as httpd:
+            print("Serving on port %d  ->  %s" % (PORT, BACKEND))
+            try:
+                httpd.serve_forever()
+            except KeyboardInterrupt:
+                print("\nStopped.")
+            finally:
+                httpd.server_close()
+    finally:
+        launch_gateway.stop()
