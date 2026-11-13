@@ -48,6 +48,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/_model":
             return model_api.get(self)
+        if self.path == "/_gateway_status":
+            return self._json({"ok": True,
+                               "restarting": launch_gateway.is_restarting(),
+                               "up": launch_gateway.is_up()})
         if self._is_attachments():
             return attachments.listing(self)
         if self._is_proxy():

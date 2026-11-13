@@ -17,6 +17,25 @@ _CMD = [HERMES_PY, "-m", "hermes_cli.main", "gateway", "run"]
 
 _lock = threading.Lock()   # 代理是多线程，别同时拉起两个网关
 _proc = None               # 本进程拉起的网关
+_restarting = threading.Event()   # 重启中（停旧的→拉新的→重新就绪）
+
+
+def is_restarting():
+    """给前端用：现在是"网关重启中"还是"网关挂了"。"""
+    return _restarting.is_set()
+
+
+def wait_ready(timeout=120):
+    """等到网关端口可连。重启期间发消息会先进这里排队，等网关回来再放行。
+
+    返回 True = 就绪；False = 超时。重启没发生时立刻返回 True（is_up 判定）。
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if is_up():
+            return True
+        time.sleep(0.5)
+    return is_up()
 
 
 def is_up(port=PORT):
@@ -48,46 +67,51 @@ def ensure(label=""):
     三种情况：已经起来 → 直接返回；自己拉的那个还活着只是在冷启动 → 不再拉第二个；
     其余（没拉过 / 拉起来的那个已经退出了）→ 重新拉一个。
     """
-    global _proc
     if is_up():
         return True
     with _lock:
-        if is_up():                 # 等锁期间可能已经被别的线程拉起来了
-            return True
-        if _alive():
-            return _alive()         # 正在冷启动，别叠进程
-        if not os.path.isfile(HERMES_PY):
-            print("[gateway] venv python not found: %s" % HERMES_PY, flush=True)
-            return False
+        return _ensure_locked(label)
 
-        # 上一个拉起来的已经死了，先把它的退出码交代清楚，多半就是启动失败的原因
-        if _proc is not None:
-            print("[gateway] previous gateway exited with code %s, relaunching%s"
-                  % (_proc.returncode, (" (%s)" % label) if label else ""), flush=True)
-        else:
-            print("[gateway] starting%s..." % ((" (%s)" % label) if label else ""), flush=True)
-        print("[gateway] %s" % " ".join(_CMD), flush=True)
-        print("-" * 60, flush=True)
-        try:
-            _proc = subprocess.Popen(_CMD, cwd=HERMES_SRC, env=_env())
-        except OSError as e:
-            print("[gateway] launch failed: %s" % e, flush=True)
-            _proc = None
-            return False
 
-        print("[gateway] waiting for %d (cold start usually needs 20-60s)..." % PORT, flush=True)
-        start = time.time()
-        while time.time() - start < WAIT_SECONDS:
-            if is_up():
-                print("[gateway] ready on %d." % PORT, flush=True)
-                return True
-            if _proc.poll() is not None:
-                print("[gateway] exited with code %s during startup." % _proc.returncode, flush=True)
-                return False
-            time.sleep(1)
-        print("[gateway] %d not open after %ds, still booting in the background - "
-              "the page answers 502 until it is up." % (PORT, WAIT_SECONDS), flush=True)
+def _ensure_locked(label=""):
+    """ensure 的加锁版：调用方必须已经持有 _lock。restart 在锁内直接复用它。"""
+    global _proc
+    if is_up():                     # 等锁期间可能已经被别的线程拉起来了
         return True
+    if _alive():
+        return _alive()             # 正在冷启动，别叠进程
+    if not os.path.isfile(HERMES_PY):
+        print("[gateway] venv python not found: %s" % HERMES_PY, flush=True)
+        return False
+
+    # 上一个拉起来的已经死了，先把它的退出码交代清楚，多半就是启动失败的原因
+    if _proc is not None:
+        print("[gateway] previous gateway exited with code %s, relaunching%s"
+              % (_proc.returncode, (" (%s)" % label) if label else ""), flush=True)
+    else:
+        print("[gateway] starting%s..." % ((" (%s)" % label) if label else ""), flush=True)
+    print("[gateway] %s" % " ".join(_CMD), flush=True)
+    print("-" * 60, flush=True)
+    try:
+        _proc = subprocess.Popen(_CMD, cwd=HERMES_SRC, env=_env())
+    except OSError as e:
+        print("[gateway] launch failed: %s" % e, flush=True)
+        _proc = None
+        return False
+
+    print("[gateway] waiting for %d (cold start usually needs 20-60s)..." % PORT, flush=True)
+    start = time.time()
+    while time.time() - start < WAIT_SECONDS:
+        if is_up():
+            print("[gateway] ready on %d." % PORT, flush=True)
+            return True
+        if _proc.poll() is not None:
+            print("[gateway] exited with code %s during startup." % _proc.returncode, flush=True)
+            return False
+        time.sleep(1)
+    print("[gateway] %d not open after %ds, still booting in the background - "
+          "the page answers 502 until it is up." % (PORT, WAIT_SECONDS), flush=True)
+    return True
 
 
 def stop(timeout=15):
@@ -104,6 +128,38 @@ def stop(timeout=15):
         _proc.kill()
     _proc = None
     print("[gateway] stopped.", flush=True)
+
+
+def restart(label=""):
+    """改完 config.yaml 后重启网关，让新配置生效（切模型 / 切推理档位用）。
+
+    调用方立刻拿到 True，不等冷启动：拉起新网关交给守护线程，
+    期间 _restarting 置位，前端据此显示"网关重启中"而不是报错。
+    """
+    global _proc
+    if not _alive():
+        return ensure(label=label or "restart")
+    with _lock:
+        if _alive():
+            print("[gateway] restarting%s..." % ((" (%s)" % label) if label else ""), flush=True)
+            try:
+                _proc.terminate()
+                _proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                _proc.kill()        # 卡住不走的，硬杀
+            _proc = None
+        # 已经自己退出了就直接往下拉新的
+        _restarting.set()
+        threading.Thread(target=_restart_worker, daemon=True).start()
+    return True
+
+
+def _restart_worker():
+    """后台把网关拉起来，就绪后清掉"重启中"标志。"""
+    try:
+        _ensure_locked("restart")
+    finally:
+        _restarting.clear()
 
 
 if __name__ == "__main__":

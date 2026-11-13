@@ -18,6 +18,12 @@ def proxy(handler, method):
     headers = {k: v for k, v in handler.headers.items()
                if k.lower() not in ("host", "connection", "accept-encoding", "origin")}
 
+    # 网关正在重启（切模型 / 切推理档位）：请求先在这里排队，等它回来再转发，
+    # 而不是立刻 502 让客户端断开。重启通常 20-60 秒，最多等 120 秒。
+    if launch_gateway.is_restarting():
+        print("[proxy] gateway restarting, holding %s %s" % (method, url), flush=True)
+        launch_gateway.wait_ready(120)
+
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         resp = urllib.request.urlopen(req, timeout=300)
