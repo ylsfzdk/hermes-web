@@ -3,17 +3,21 @@
 单独跑也行：python launch_gateway.py
 """
 import os
+import shutil
 import socket
 import subprocess
 import sys
 import threading
 import time
 
-from config_paths import HERMES_DIR, HERMES_PY, HERMES_SRC
+from config_paths import HERMES_DIR, HERMES_SRC
 
 PORT = 8642
 WAIT_SECONDS = 10          # 冷启动实测 20-60 秒，等不到也算成功（后台还在起）
-_CMD = [HERMES_PY, "-m", "hermes_cli.main", "gateway", "run"]
+
+# 走 PATH 上的 hermes.exe（E:\hermes-agent-0.23.1\.venv\Scripts 已在 PATH 里）。
+# cwd 和 PYTHONPATH 仍然指到源码树，_env() 里保证。
+_CMD = ["hermes", "gateway", "run"]
 
 _lock = threading.Lock()   # 代理是多线程，别同时拉起两个网关
 _proc = None               # 本进程拉起的网关
@@ -51,7 +55,7 @@ def _env():
     """网关必须拿到 HERMES_HOME / PYTHONPATH / VIRTUAL_ENV，否则读的是 ~/.hermes 那份配置。"""
     env = dict(os.environ)
     env["HERMES_HOME"] = HERMES_DIR
-    env["VIRTUAL_ENV"] = os.path.dirname(os.path.dirname(HERMES_PY))
+    env["VIRTUAL_ENV"] = os.path.join(HERMES_SRC, ".venv")
     env["PYTHONPATH"] = HERMES_SRC
     env["PYTHONUTF8"] = "1"
     return env
@@ -80,8 +84,10 @@ def _ensure_locked(label=""):
         return True
     if _alive():
         return _alive()             # 正在冷启动，别叠进程
-    if not os.path.isfile(HERMES_PY):
-        print("[gateway] venv python not found: %s" % HERMES_PY, flush=True)
+    hermes = shutil.which("hermes")
+    if not hermes:
+        print("[gateway] 'hermes' not found on PATH - add E:\\hermes-agent-0.23.1\\.venv\\Scripts "
+              "to PATH, or the gateway cannot be launched", flush=True)
         return False
 
     # 上一个拉起来的已经死了，先把它的退出码交代清楚，多半就是启动失败的原因

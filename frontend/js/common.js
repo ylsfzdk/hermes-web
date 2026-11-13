@@ -34,7 +34,7 @@ export function registerOpeners(cfgOpen, modelOpen) {
   openers.model = modelOpen;
 }
 
-export function toggleSettings() {
+function toggleSettings() {
   if (settingsPop.classList.contains("show")) closeSettings();
   else {
     show(settingsPop);

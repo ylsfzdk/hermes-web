@@ -334,17 +334,3 @@ def _write_lines(backup, lines):
         raise RuntimeError("没有权限修改 config.yaml，请用普通用户身份运行 start.bat；"
                            "或先给 %s 加写权限（同名 .bak 也要能写）" % CONFIG)
     return backup
-
-
-def restore_config(backup):
-    """把 config.yaml 还原成 .bak 里的内容（改动前）。返回是否成功。"""
-    if not backup or not os.path.exists(backup):
-        return False
-    try:
-        with open(backup, "r", encoding="utf-8", newline="") as f:
-            old = f.read()
-        with open(CONFIG, "w", encoding="utf-8", newline="") as f:
-            f.write(old)
-        return True
-    except Exception:
-        return False

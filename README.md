@@ -33,19 +33,33 @@ API_SERVER_HOST=127.0.0.1           # 只给本机网页服务器代理用
 
 > 踩过的坑：`DEEPSEEK_API_KEY` 只放在 Windows 用户环境变量里时，`hermes` 报 `No usable credentials found for provider 'deepseek'`，网页端表现为回复「couldn't connect to the AI model service」。写进 `.hermes-home\.env` 才生效。
 >
-> 源码树路径默认由 `backend\config_paths.py` 按 `..\hermes-agent-0.23.1` 算出来（`HERMES_SRC`），数据目录是 `HERMES_HOME`（默认 `<源码树>\.hermes-home`）。源码树搬家时改 `HERMES_SRC` 环境变量或那一行常量即可，`attachments.py` / `hermes_config.py` / `gateway.py` 都跟着走。
+> 源码树路径默认由 `backend\config_paths.py` 按 `..\hermes-agent-0.23.1` 算出来（`HERMES_SRC`），数据目录是 `HERMES_HOME`（默认 `<源码树>\.hermes-home`）。源码树搬家时改 `HERMES_SRC` 环境变量或那一行常量即可，所有模块跟着走。**`HERMES_SRC` 和 `HERMES_HOME` 是两个独立变量**：只改前者会让数据目录跟着漂到新源码树下，原来的会话和 `.env` 就找不到了。
 >
-> PATH 上的 `hermes.exe` 可能是旧的 pip 安装，**不要用**。网关一律通过 `.venv\Scripts\python.exe -m hermes_cli.main gateway` 启动。
+> 网关通过 **PATH 上的 `hermes.exe`** 启动（`backend\launch_gateway.py` 调用 `hermes gateway run`），所以 `E:\hermes-agent-0.23.1\.venv\Scripts` 必须在 PATH 里。`cwd` 和 `PYTHONPATH` 仍由代码设到源码树，不依赖 PATH。
+>
+> 踩过的坑：PATH 上的 `hermes.exe` 若来自别的 pip 安装，会静默连到另一个数据目录。确认 `where hermes` 指向 `.venv\Scripts`。
 
 > 同源代理改造后**不再需要** `API_SERVER_CORS_ORIGINS`——页面和网关都通过 3000 端口，不存在跨域。
 
 ## 快速启动
 
-双击 `start.bat`，会检查 `..\hermes-agent-0.23.1\.venv\Scripts\python.exe` 是否存在，端口 8642 没起就用源码树启动网关，再起网页服务器。
+双击 `start.bat`：
+
+1. 用 `..\hermes-agent-0.23.1\.venv\Scripts\python.exe` 启动 `backend\server.py`
+2. `launch_gateway.ensure()`：8642 已有网关就复用，没有就通过 PATH 上的 `hermes gateway run` 拉起，最多等 10 秒（冷启动实测 20–60 秒，等不到也照样往下走，网关在后台继续起）
+3. 网页服务监听 3000
 
 然后浏览器打开 http://localhost:3000
 
 启动后第一次打开页面会弹窗要求填写 `API_SERVER_KEY`，填写后保存在浏览器 localStorage，不会上传。
+
+### 网关的生命周期
+
+- **退出时**只关本进程拉起的那个网关（`terminate()`，Windows 上是硬杀）
+- **代理失败时**（`/api/*` 连不上 8642）自动重新拉起一次
+- **网关重启中**（切模型 / 切推理档位触发）发消息的请求会在代理层挂起等待，最多 120 秒，而不是立刻 502
+- 网关空闲 10 分钟会自行退出（Hermes 的 `gateway.unmanaged_idle_exit_seconds`），下次请求会自动拉起
+- 状态查询：`GET /_gateway_status` → `{ ok, restarting, up }`
 
 ## 手机访问
 
@@ -70,17 +84,17 @@ E:\hermes-web\
 │       ├── chat.js           会话列表 + 消息渲染 + SSE 流式回复
 │       ├── config.js         密钥弹窗
 │       ├── attachments.js    会话级附件：📎 选文件、格式/大小校验、上传
-│       ├── reasoning.js      推理强度：设置菜单里循环切档
+│       ├── reasoning.js      推理强度：输入框左边按钮切换档位
 │       └── model.js          模型切换弹窗
 ├── backend\
-│   ├── server.py         入口：路由（/_model、/_reasoning、/_attachments、代理、静态文件）+ 线程化 HTTP 服务
+│   ├── server.py         入口：路由（/_model、/_reasoning、/_gateway_status、/_attachments、代理、静态文件）+ 线程化 HTTP 服务
+│   ├── launch_gateway.py 网关进程管理：ensure / restart / stop / wait_ready，通过 PATH 上的 hermes 启动
 │   ├── attachments.py    /_attachments 上传/列表/删除：格式白名单 + 文件头探测 + 20 MB 上限
-│   ├── proxy.py          /api/、/v1/、/health 反向代理（SSE 逐块转发）
-│   ├── model_api.py      GET/POST /_model 查询与切换模型、POST /_reasoning 切推理档位（含失败回滚）
+│   ├── proxy.py          /api/、/v1/、/health 反向代理（SSE 逐块转发；网关重启时排队等待）
+│   ├── model_api.py      GET/POST /_model 查询与切换模型、POST /_reasoning 切推理档位（改完即重启网关）
 │   ├── hermes_config.py  读写 <HERMES_HOME>\config.yaml 与模型缓存
-│   ├── gateway.py        结束端口进程、重启 hermes gateway 并等就绪
 │   └── config_paths.py   路径 / 端口 / 代理前缀常量
-├── start.bat     启动器（拉网关 + 起网页服务）
+├── start.bat     启动器（起网页服务，网关由 server.py 拉起）
 ├── README.md     本文件
 └── .gitignore
 ```
@@ -173,15 +187,17 @@ API 地址  [文本框]       ← 留空则不修改
 
 1. 改写 `<HERMES_HOME>/config.yaml` 的 `model:` 段（`provider` / `name` / `default` / `api_key` / `base_url`），原文件备份为 `config.yaml.bak`
 2. 把选中的供应商写回 `<HERMES_HOME>/provider_models_cache.json`
-3. 结束占用 8642 端口的进程并重启网关，最多等 40 秒；起不来自动还原 `config.yaml.bak` 并用旧配置再重启一次，期间对话会中断
+3. 杀掉当前网关进程，后台线程用 `hermes gateway run` 重新拉起（冷启动 20–60 秒，接口不阻塞等待）
 
 模型与供应商都没变、也没填 Key / 地址时，「确认」直接关闭面板，不重启网关。
 
 > **注意**：供应商列表来自 `<HERMES_HOME>/models_dev_cache.json`（只读）。切到没配置过 key 的供应商时，必须同时填 API Key 和 API 地址，否则会鉴权失败。
+>
+> **重启失败不会自动回滚**：配置已经写进去了，`.bak` 留着手动还原。重启期间发消息的请求会在代理层挂起等待，最多 120 秒。
 
 ## 后端接口
 
-`server.py` 额外提供以下接口（不属于 Hermes 原生 API）：`/_model`、`/_reasoning`、`/_attachments`。
+`server.py` 额外提供以下接口（不属于 Hermes 原生 API）：`/_model`、`/_reasoning`、`/_gateway_status`、`/_attachments`。
 
 ### `GET /_model`
 
@@ -210,7 +226,15 @@ API 地址  [文本框]       ← 留空则不修改
 
 `api_key` / `base_url` 可省略（省略则不改）。
 
-成功返回 `{ "ok": true, "model", "provider", "backup" }`；网关起不来时自动还原配置并用旧配置再重启一次，返回 `{ "ok": false, "warning", "restored", "backup" }`，HTTP 状态码仍是 200，前端以 `ok` 判断。
+成功返回 `{ "ok": true, "model", "provider", "backup" }`；网关起不来时返回 `{ "ok": false, "warning", "backup" }`，HTTP 状态码仍是 200，前端以 `ok` 判断。**配置不回滚**，需要时手动用 `config.yaml.bak` 还原。
+
+### `GET /_gateway_status`
+
+```json
+{ "ok": true, "restarting": false, "up": true }
+```
+
+`restarting` 为真表示网关正在重启（切模型 / 切推理档位触发）；`up` 表示 8642 端口可连。
 
 ### `GET /_attachments?session_id=<会话ID>`
 
@@ -258,34 +282,36 @@ Hermes 原生支持 `/reasoning` 命令（`agent.reasoning_effort`），但这�
 
 左下角 **⚙ 设置 → 推理强度** 点一下循环切档：`默认 → none → minimal → low → medium → high → xhigh → 默认`。
 
-- 改的是 `<HERMES_HOME>/config.yaml` 的 `agent.reasoning_effort`，和原来一样先备份成 `.bak`，再重启网关（对话会中断）
+- 改的是 `<HERMES_HOME>/config.yaml` 的 `agent.reasoning_effort`，先备份成 `.bak`，再重启网关（对话会中断）
 - 值没变则不写文件、不重启
 - `默认` 是不设该键，由 Hermes/供应商自己决定（DeepSeek 官方端默认 `high`）
 - DeepSeek 实际映射：`low` / `medium` / `high` 原样传 `reasoning_effort`，`xhigh` → `max`；
   `none` 关 thinking；`minimal` 会被 Hermes 丢掉（DeepSeek 无该档）
 - 非 DeepSeek 供应商的映射走各自的 provider profile，未注册的供应商可能不生效
 
-对应接口 `POST /_reasoning`：`{ "level": "high" }`，非法档位返回 400。
+对应接口 `POST /_reasoning`：`{ "level": "high" }`，非法档位返回 400。改完立即重启网关，重启期间发消息会挂起等待。
 
 ## 已知限制
 
 - **`/_model`、`/_reasoning`、`/_attachments` 无鉴权**：能打开本页面的局域网设备都能改本机模型配置、API Key，或往磁盘写文件，仅限可信网络使用
-- **回滚可能失败**：先还原 `config.yaml` 再重启旧网关；若还原失败会把 `backup` 路径告诉前端，需手动还原
+- **配置不回滚**：切模型 / 切推理档位失败时 `config.yaml` 保持新值，需手动从 `.bak` 还原
+- **网关重启期间 `/api/*` 会挂起**：请求在代理层排队最多 120 秒；网关重启失败时表现为"卡住"而不是立即报错
+- **网关硬杀不优雅**：`stop()` / `restart()` 在 Windows 上走 `terminate()`（`TerminateProcess`），Hermes 的关库流程来不及跑完
 - **跨供应商不自动配 `base_url`**：切到 openrouter 等供应商时，`base_url` 仍停在上一个供应商的值，需手动填写
 - **`/_model` 返回约 2MB**：包含全部模型的目录，首次加载稍慢
-- **网关重启会中断对话**：切换模型时正在进行的流式回复会被断开
-- **重启依赖进程管理**：`netstat` + `taskkill` 结束 8642 端口进程，仅验证过 Windows
 - **`deepseek-flash` 会被 Hermes 改写为 `deepseek-chat`**：这是 Hermes 的模型名规范化规则，官方 `deepseek-chat` 别名同样指向最新的 V4.1 Flash，实际效果一致，仅日志中显示为别名
 - **附件只传文件名，不传内容**：模型拿到的是 `[附件] 文件名`，需要自己用工具去读磁盘上的文件。PDF / Word / Excel 的内容解析尚未实现，白名单只解决"收得下"，不等于"读得懂"
 - **附件与会话无外键关联**：删会话的清理只覆盖网页端路径，直接调网关 API 删会话会残留附件目录
 - **未发送的附件刷新即丢**：选文件只预检不落盘，文件暂存在浏览器内存
 - **旧记录兼容**：`index.json` 里缺 `sent` 字段的历史记录会被当成待发附件，刷新时仍会显示成标签
+- **启动只等 10 秒**：`WAIT_SECONDS = 10`，冷启动 20–60 秒时必然判"未就绪"，此时网关在后台继续起，前几十秒页面会 502
 
 ## 开发提示
 
-- 修改前端后浏览器需 `Ctrl + F5` 强制刷新，静态文件缓存可能吃掉改动
-- 修改 `backend\` 下任何 `.py` 后必须关闭并重开 `start.bat`
-- 切换模型后若页面发消息没反应，优先看浏览器控制台 Network 里的 `chat/stream` 请求状态码
+- 修改前端后浏览器需 `Ctrl + Shift + R` 强制刷新，静态文件缓存可能吃掉改动
+- 修改 `backend\` 下任何 `.py` 后必须关闭并重开 `start.bat`（当前窗口的 PATH 是旧快照）
+- 改过系统 PATH 后必须重开终端，`shutil.which("hermes")` 才找得到新的 `hermes.exe`
+- 切换模型后若页面发消息没反应，先看 `GET /_gateway_status` 的 `up`，再看浏览器 Network 里的请求状态码
 
 ### 自检
 
@@ -296,8 +322,8 @@ cd E:\hermes-web\backend; python attachments.py
 # 配置读写自检：真实 config.yaml 形状（注释段在前、agent 在 model 前）
 cd E:\hermes-web\backend; python hermes_config.py
 
-# 路径自检：源码树 / 数据目录 / venv 解释器是否都在
-cd E:\hermes-web\backend; python -c "import config_paths as c, os; print(c.HERMES_SRC, c.HERMES_DIR, os.path.isfile(c.HERMES_PY))"
+# 路径自检：源码树 / 数据目录是否对（HERMES_PY 常量已移除，网关走 PATH）
+cd E:\hermes-web\backend; python -c "import config_paths as c, shutil; print(c.HERMES_SRC, c.HERMES_DIR, shutil.which('hermes'))"
 
 # 前端语法检查（改完 JS 必跑）
 node --check E:\hermes-web\frontend\js\attachments.js

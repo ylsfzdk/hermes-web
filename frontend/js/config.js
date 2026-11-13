@@ -15,7 +15,7 @@ export function openCfg() {
   setTimeout(() => document.getElementById("cfg-key").focus(), 50);
 }
 
-export function closeCfg() { hide(mask); }
+function closeCfg() { hide(mask); }
 
 document.getElementById("cfg-save").addEventListener("click", async () => {
   const key = document.getElementById("cfg-key").value.trim();

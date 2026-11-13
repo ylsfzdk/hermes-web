@@ -71,7 +71,7 @@ export function bindAttachments({ ensureSession, notify }) {
 export const attachmentNames = () => files.filter(f => !f.error).map(f => f.name);
 
 // 基础校验：格式 + 大小。返回错误文案，通过返回 null。
-export function checkFile(file) {
+function checkFile(file) {
   const name = file.name || "";
   const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
   if (!ext) return "不支持的文件格式（没有扩展名）";
