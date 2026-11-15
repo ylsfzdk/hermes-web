@@ -9,6 +9,17 @@ import launch_gateway
 from config_paths import BACKEND
 
 
+def _send_plain(handler, code, text):
+    """写一个 UTF-8 的纯文本错误响应，状态行只带标准短语。"""
+    body = text.encode("utf-8")
+    handler.send_response(code)
+    handler.send_header("Content-Type", "text/plain; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Cache-Control", "no-store")
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
 def proxy(handler, method):
     """在 handler 上把当前请求转发到 BACKEND，逐块回写（SSE 不被缓冲）。"""
     url = BACKEND + handler.path
@@ -33,7 +44,10 @@ def proxy(handler, method):
         # 连不上：网关挂了或没起，拉一个（可能已在冷启动，ensure 自己会去重）
         if not launch_gateway.is_up():
             launch_gateway.ensure(label="proxy %s %s" % (method, handler.path.split("?")[0]))
-        handler.send_error(502, "proxy error: %s" % e)
+        # 不能走 send_error：它把 message 塞进 HTTP 状态行再按 latin-1 编码，
+        # 而 Windows 的 OSError 提示是中文（"由于目标计算机积极拒绝"），
+        # UnicodeEncodeError 会让连 502 都发不出去，浏览器只看到 ERR_EMPTY_RESPONSE。
+        _send_plain(handler, 502, "proxy error: %s" % e)
         return
 
     try:

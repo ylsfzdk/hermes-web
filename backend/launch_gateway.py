@@ -4,11 +4,12 @@
 """
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 
 from config_paths import HERMES_DIR, HERMES_SRC
 
@@ -43,11 +44,14 @@ def wait_ready(timeout=120):
 
 
 def is_up(port=PORT):
-    """端口有没有人听。比发 HTTP 请求便宜，够用。"""
+    """端口有人听、且 HTTP 能应答。只看端口不够：uvicorn 监听后到 accept 还有一段空档，
+    那时连上去也会被拒，正是切模型后 502 的来历。"""
     try:
-        socket.create_connection(("127.0.0.1", port), timeout=1).close()
-        return True
-    except OSError:
+        with urllib.request.urlopen("http://127.0.0.1:%d/health" % port, timeout=2) as r:
+            return r.status < 500
+    except urllib.error.HTTPError:
+        return True                 # 应答了就算活（不需要 /health 是 200）
+    except Exception:
         return False
 
 
@@ -77,7 +81,7 @@ def ensure(label=""):
         return _ensure_locked(label)
 
 
-def _ensure_locked(label=""):
+def _ensure_locked(label="", wait=WAIT_SECONDS):
     """ensure 的加锁版：调用方必须已经持有 _lock。restart 在锁内直接复用它。"""
     global _proc
     if is_up():                     # 等锁期间可能已经被别的线程拉起来了
@@ -107,7 +111,7 @@ def _ensure_locked(label=""):
 
     print("[gateway] waiting for %d (cold start usually needs 20-60s)..." % PORT, flush=True)
     start = time.time()
-    while time.time() - start < WAIT_SECONDS:
+    while time.time() - start < wait:
         if is_up():
             print("[gateway] ready on %d." % PORT, flush=True)
             return True
@@ -115,8 +119,8 @@ def _ensure_locked(label=""):
             print("[gateway] exited with code %s during startup." % _proc.returncode, flush=True)
             return False
         time.sleep(1)
-    print("[gateway] %d not open after %ds, still booting in the background - "
-          "the page answers 502 until it is up." % (PORT, WAIT_SECONDS), flush=True)
+    print("[gateway] %d not answering HTTP after %ds, still booting in the background - "
+          "the page answers 502 until it is up." % (PORT, wait), flush=True)
     return True
 
 
@@ -161,9 +165,15 @@ def restart(label=""):
 
 
 def _restart_worker():
-    """后台把网关拉起来，就绪后清掉"重启中"标志。"""
+    """后台把网关拉起来，等它真正应答 HTTP 后再清掉"重启中"标志。
+
+    这一步是排队生效的关键：wait_ready 一看到标志清掉就放行请求，
+    所以必须等应用就绪，不能等端口一开就清（那之后的请求仍会被拒）。
+    """
     try:
-        _ensure_locked("restart")
+        _ensure_locked("restart", wait=180)
+        if not wait_ready(timeout=120):
+            print("[gateway] still not ready after restart wait window", flush=True)
     finally:
         _restarting.clear()
 

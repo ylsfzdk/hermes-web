@@ -380,22 +380,27 @@ async function sendMessage(text, names = []) {
 
     // 首轮对话后把标题补上。
     // 网关要求标题全局唯一，消息前缀很容易重名（连发两次"测试"就撞），
-    // 所以重名时追加序号重试。
+    // 所以重名时追加序号重试；其它失败（480/502/网关刚重启）重试也没用，直接退出。
     const s = sessions.find(x => x.id === sid);
     if (s && !s.title) {
       const base = (text.trim() || "会话").slice(0, 20);
       let title = base;
       for (let n = 1; n <= 9; n++) {
+        let res;
         try {
-          const res = await api("/api/sessions/" + encodeURIComponent(sid), {
+          res = await api("/api/sessions/" + encodeURIComponent(sid), {
             method: "PATCH",
             body: JSON.stringify({ title })
           });
-          if (res.ok) break;
         } catch (e) { break; }
+        if (res.ok) break;
+        // 只有"标题重名"才值得换个序号重来，别的错误换个名字照样 400
+        let detail = "";
+        try { detail = await res.text(); } catch (e) {}
+        if (!(res.status === 409 || /title/i.test(detail))) break;
         title = base + " (" + (n + 1) + ")";
       }
-      if (s) s.title = title;
+      s.title = title;
       topbarTitle.textContent = title;
       await loadSessions();
     }

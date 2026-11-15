@@ -36,11 +36,7 @@ export function registerOpeners(cfgOpen, modelOpen) {
 
 function toggleSettings() {
   if (settingsPop.classList.contains("show")) closeSettings();
-  else {
-    show(settingsPop);
-    // 只在第一次打开时拉取，之后靠切换模型成功后刷新
-    if (openers.model) openers.model.loadInfo();
-  }
+  else show(settingsPop);
 }
 
 export function bindSettingsMenu(onModel) {

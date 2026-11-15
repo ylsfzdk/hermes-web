@@ -15,6 +15,7 @@ registerOpeners(openCfg, { loadInfo: loadModelInfo });
 
 // 配置改动 / 模型切换后重新拉一遍会话和当前会话
 const reload = async () => {
+  await loadModelInfo();      // 侧边栏的模型名只有点开菜单才刷新，这里顺手补上
   await chat.loadSessions();
   const id = chat.getCurrentId();
   if (id) await chat.switchSession(id);
@@ -34,7 +35,6 @@ bindSettingsMenu(openModelPicker);
 // ============ 启动 ============
 (async function init() {
   if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
-  loadModelInfo();
   if (!getCfg()) { openCfg(); return; }
   await reload();
 })();
