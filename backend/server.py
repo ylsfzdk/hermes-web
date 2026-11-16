@@ -15,6 +15,7 @@ import attachments
 import launch_gateway
 import model_api
 import proxy
+import qqbot_api
 from config_paths import BACKEND, PROXY_PREFIXES, ROOT
 
 # Windows 上 .js 常被注册成 text/plain，浏览器会拒绝执行模块脚本
@@ -48,6 +49,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/_model":
             return model_api.get(self)
+        if self.path == "/_qqbot":
+            return qqbot_api.get(self)
+        if self.path.split("?", 1)[0] == "/_qqbot/log":
+            return qqbot_api.log(self)
         if self.path == "/_gateway_status":
             return self._json({"ok": True,
                                "restarting": launch_gateway.is_restarting(),
@@ -61,6 +66,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/_model":
             return model_api.switch(self)
+        if self.path == "/_qqbot":
+            return qqbot_api.save(self)
         if self.path == "/_reasoning":
             return model_api.reasoning(self)
         if self._is_attachments():

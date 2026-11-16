@@ -14,5 +14,7 @@ HERMES_SRC = os.path.normpath(HERMES_SRC)
 
 HERMES_DIR = os.environ.get("HERMES_HOME") or os.path.join(HERMES_SRC, ".hermes-home")
 CONFIG = os.path.join(HERMES_DIR, "config.yaml")
+# 平台凭据都写这里（QQ_APP_ID / QQ_CLIENT_SECRET ...），和 config.yaml 一起交给网关
+ENV_FILE = os.path.join(HERMES_DIR, ".env")
 MODELS_CACHE = os.path.join(HERMES_DIR, "provider_models_cache.json")
 MODELS_DEV_CACHE = os.path.join(HERMES_DIR, "models_dev_cache.json")

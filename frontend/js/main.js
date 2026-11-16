@@ -6,6 +6,7 @@ import { bindSettingsMenu, registerOpeners, hooks as settingsHooks } from "./com
 import * as chat from "./chat.js";
 import { getCfg, openCfg } from "./config.js";
 import { loadModelInfo, openModelPicker, hooks as modelHooks } from "./model.js";
+import { initBot } from "./qqbot.js";
 import { bindReasoning } from "./reasoning.js";
 
 const sidebar = document.getElementById("sidebar");
@@ -31,6 +32,7 @@ const reloadModelInfo = async () => {
 };
 bindReasoning(reloadModelInfo);
 bindSettingsMenu(openModelPicker);
+initBot();
 
 // ============ 启动 ============
 (async function init() {

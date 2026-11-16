@@ -12,6 +12,7 @@
 - 供应商按前缀过滤、模型按包含过滤，均为浮层下拉（本机目录 235 家供应商 / 8944 个模型，随 `models_dev_cache.json` 变化）
 - 工具调用过程可见（运行中 → ✓ 完成 / ✗ 失败）
 - **会话级附件**：输入行左侧 📎 按钮选文件，84 种格式 + 20 MB 上限 + 文件头校验，按会话存到 `<HERMES_HOME>/sessions/<会话ID>/attachments/`
+- **QQ 机器人**：左侧栏「新建会话」下面的 🤖 机器人按钮 → 弹出独立配置窗口，跳 QQ 开放平台拿 AppID / AppSecret 后手填，选私聊授权方式，保存即重启网关加载凭据
 - 生成中可中断（发送按钮变「停止」）
 - 输入框没字也没有附件时，发送按钮不可用
 - 局域网内手机浏览器直接访问，窄屏自动收起侧栏
@@ -77,7 +78,8 @@ E:\hermes-web\
 │   │   ├── base.css          侧栏 / 主区 / 消息气泡 / 输入框
 │   │   ├── dialog.css        弹窗公共：遮罩、卡片、按钮
 │   │   ├── key-dialog.css    密钥弹窗
-│   │   └── model-dialog.css  模型切换弹窗（含浮层下拉）
+│   │   ├── model-dialog.css  模型切换弹窗（含浮层下拉）
+│   │   └── qqbot.css         QQ 机器人配置弹窗
 │   └── js\
 │       ├── main.js           入口：接好各模块后启动
 │       ├── common.js         配置读写、遮罩显隐、左下角设置菜单
@@ -85,14 +87,16 @@ E:\hermes-web\
 │       ├── config.js         密钥弹窗
 │       ├── attachments.js    会话级附件：📎 选文件、格式/大小校验、上传
 │       ├── reasoning.js      推理强度：输入框左边按钮切换档位
+│       ├── qqbot.js          QQ 机器人配置弹窗：跳官网、填凭据、授权方式、保存
 │       └── model.js          模型切换弹窗
 ├── backend\
-│   ├── server.py         入口：路由（/_model、/_reasoning、/_gateway_status、/_attachments、代理、静态文件）+ 线程化 HTTP 服务
+│   ├── server.py         入口：路由（/_model、/_reasoning、/_qqbot、/_gateway_status、/_attachments、代理、静态文件）+ 线程化 HTTP 服务
 │   ├── launch_gateway.py 网关进程管理：ensure / restart / stop / wait_ready，通过 PATH 上的 hermes 启动
 │   ├── attachments.py    /_attachments 上传/列表/删除：格式白名单 + 文件头探测 + 20 MB 上限
 │   ├── proxy.py          /api/、/v1/、/health 反向代理（SSE 逐块转发；网关重启时排队等待）
 │   ├── model_api.py      GET/POST /_model 查询与切换模型、POST /_reasoning 切推理档位（改完即重启网关）
-│   ├── hermes_config.py  读写 <HERMES_HOME>\config.yaml 与模型缓存
+│   ├── qqbot_api.py      GET/POST /_qqbot 读写 QQ 机器人配置、GET /_qqbot/log 取相关日志
+│   ├── hermes_config.py  读写 <HERMES_HOME>\config.yaml、.env 与模型缓存
 │   └── config_paths.py   路径 / 端口 / 代理前缀常量
 ├── start.bat     启动器（起网页服务，网关由 server.py 拉起）
 ├── README.md     本文件
@@ -291,9 +295,73 @@ Hermes 原生支持 `/reasoning` 命令（`agent.reasoning_effort`），但这�
 
 对应接口 `POST /_reasoning`：`{ "level": "high" }`，非法档位返回 400。改完立即重启网关，重启期间发消息会挂起等待。
 
+## QQ 机器人
+
+左侧栏「新建会话」下面是 **🤖 机器人** 按钮。点开弹出一个**独立配置窗口**（盖在聊天页上面），聊天区和输入框原样留在下面，窗口关掉就回到聊天，什么都不用等。
+
+```
+         ┌──────── 🤖 QQ 机器人 ───────────────── × ┐
+         │ 1. 应用凭据   [打开 QQ 开放平台 ↗] + 手填   │
+侧栏     │ 2. 私聊授权   pairing / allowlist / open   │
+├─ 新建会话│ 3. 开关       启用 / Markdown  [保存]      │
+├─ 🤖 机器人│ 连接状态      网关在不在 + 相关日志        │
+├─ 会话 A   │ 照这个顺序走  步骤 + 常见问题（可折叠）    │
+└─ ⚙ 设置  └───────────────────────────────────────────┘
+```
+
+关心的是「不打断聊天」：弹窗只加 `.mask.show`，不动 `body`、不折叠侧栏、不改顶栏标题，所以打开/关闭前后聊天页一模一样。关窗口三选一：右上角 × / 点遮罩空白 / Esc；点窗口内部不会关。窄屏（≤600px）自动全屏铺开。
+
+### 首次接入
+
+1. 点「1. 应用凭据」里的 **打开 QQ 开放平台 ↗**（新标签页开 <https://q.qq.com/qqbot/#/>），注册开发者并创建机器人应用
+2. 在应用后台勾选权限：**C2C 私聊消息 / 群聊 @ 消息 / 频道消息 / 交互按钮**
+3. 把应用的 **AppID** 和 **AppSecret** 复制回来，填进「1. 应用凭据」
+4. 选私聊授权方式，勾「启用 QQ 机器人」，点「保存并重启网关」
+5. 网关起来后在 QQ 里私聊机器人发一句话，日志里应出现 `[QQBot:xxxx] Connected`
+
+> **为什么没有扫码**：Hermes 的扫码配置接口（`/api/messaging/qqbot/onboarding/*`）只挂在 **dashboard** 应用上（`hermes_cli/web_server.py`，由 `hermes serve` 提供）。本项目连的 8642 是另一个 **aiohttp** 应用（`gateway/platforms/api_server.py`，`hermes gateway run` 启动），它的路由表里根本没有这些路径，请求会直接 404。所以本页只做「跳官网 + 手填」；真想扫码就走官方向导：`hermes gateway setup`（选 QQ Bot）或另起 `hermes serve` 打开它的 Messaging 页。
+
+### 授权方式
+
+| 模式 | `.env` | 说明 |
+|---|---|---|
+| `pairing`（默认） | `QQ_ALLOW_ALL_USERS=false`，`QQ_ALLOWED_USERS` 留空 | 陌生人首次发消息要审批：`hermes pairing approve <id>` |
+| `allowlist` | 同上，`QQ_ALLOWED_USERS=OPENID,...` | 只有白名单能用，弹窗会强制至少填一个 |
+| `open` | `QQ_ALLOW_ALL_USERS=true` | 谁都能私聊，慎用 |
+
+### 保存改了什么
+
+| 项 | 位置 |
+|---|---|
+| `QQ_APP_ID` / `QQ_CLIENT_SECRET` / `QQ_ALLOWED_USERS` / `QQ_GROUP_ALLOWED_USERS` / `QQBOT_HOME_CHANNEL` / `QQ_ALLOW_ALL_USERS` | `<HERMES_HOME>\.env`（改前存 `.env.bak`，已有行原地改、行尾注释保留） |
+| `platforms.qqbot.enabled` / `platforms.qqbot.markdown_support` | `<HERMES_HOME>\config.yaml`（改前存 `.bak`） |
+
+一个值都没变就不写文件、不重启网关。
+
+### 接口
+
+`GET /_qqbot` 读当前配置（**密钥只回 "有没有配"，不发明文**）：
+
+```json
+{ "enabled": false, "app_id": "", "has_secret": false, "dm_authorization": "pairing",
+  "allowed_users": "", "group_allowed_users": "", "home_channel": "",
+  "markdown_support": true, "authz_modes": { "pairing": "...", "allowlist": "...", "open": "..." } }
+```
+
+`POST /_qqbot` 保存，字段同上（`client_secret` 留空 = 不修改）：
+
+```json
+{ "app_id": "10201xxxx", "client_secret": "xxx", "enabled": true,
+  "dm_authorization": "pairing", "allowed_users": "", "home_channel": "" }
+```
+
+返回 `{ ok, changed, restarting, warning }`；`changed=false` 表示没改动，`restarting=false` 表示网关没拉起来（配置已经写进去了）。
+
+`GET /_qqbot/log?lines=40` 取 agent.log 里跟 qqbot / platform 有关的行，给弹窗底部显示。
+
 ## 已知限制
 
-- **`/_model`、`/_reasoning`、`/_attachments` 无鉴权**：能打开本页面的局域网设备都能改本机模型配置、API Key，或往磁盘写文件，仅限可信网络使用
+- **`/_model`、`/_reasoning`、`/_qqbot`、`/_attachments` 无鉴权**：能打开本页面的局域网设备都能改本机模型配置、API Key、QQ 机器人配置，或往磁盘写文件，仅限可信网络使用
 - **配置不回滚**：切模型 / 切推理档位失败时 `config.yaml` 保持新值，需手动从 `.bak` 还原
 - **网关重启期间 `/api/*` 会挂起**：请求在代理层排队最多 120 秒；网关重启失败时表现为"卡住"而不是立即报错
 - **网关硬杀不优雅**：`stop()` / `restart()` 在 Windows 上走 `terminate()`（`TerminateProcess`），Hermes 的关库流程来不及跑完
@@ -305,6 +373,9 @@ Hermes 原生支持 `/reasoning` 命令（`agent.reasoning_effort`），但这�
 - **未发送的附件刷新即丢**：选文件只预检不落盘，文件暂存在浏览器内存
 - **旧记录兼容**：`index.json` 里缺 `sent` 字段的历史记录会被当成待发附件，刷新时仍会显示成标签
 - **启动只等 10 秒**：`WAIT_SECONDS = 10`，冷启动 20–60 秒时必然判"未就绪"，此时网关在后台继续起，前几十秒页面会 502
+- **`/_qqbot` 无鉴权**：能打开本页面的局域网设备都能改 QQ 机器人配置（含 AppSecret），和 `/_model` 一样仅限可信网络
+- **保存后网关重启期间对话会断**：和切模型一样，请求在代理层排队最多 120 秒
+- **白名单只认 OpenID**：QQ 的 OpenID 由 q.qq.com 分配给每个应用，换应用后旧 ID 失效
 
 ## 开发提示
 
@@ -319,8 +390,11 @@ Hermes 原生支持 `/reasoning` 命令（`agent.reasoning_effort`），但这�
 # 附件模块自检：格式/大小/文件头校验 + 落盘删除闭环，约 0.2 秒
 cd E:\hermes-web\backend; python attachments.py
 
-# 配置读写自检：真实 config.yaml 形状（注释段在前、agent 在 model 前）
+# 配置读写自检：真实 config.yaml 形状（注释段在前、agent 在 model 前）+ .env 读写
 cd E:\hermes-web\backend; python hermes_config.py
+
+# QQ 机器人配置自检：在临时副本上跑 save → read 全流程，不碰真实 .env / config.yaml
+cd E:\hermes-web\backend; python _qqbot_selfcheck.py
 
 # 路径自检：源码树 / 数据目录是否对（HERMES_PY 常量已移除，网关走 PATH）
 cd E:\hermes-web\backend; python -c "import config_paths as c, shutil; print(c.HERMES_SRC, c.HERMES_DIR, shutil.which('hermes'))"
@@ -328,9 +402,10 @@ cd E:\hermes-web\backend; python -c "import config_paths as c, shutil; print(c.H
 # 前端语法检查（改完 JS 必跑）
 node --check E:\hermes-web\frontend\js\attachments.js
 node --check E:\hermes-web\frontend\js\chat.js
+node --check E:\hermes-web\frontend\js\qqbot.js
 ```
 
-自检会在 `backend\.attach-selfcheck\` 建临时根，跑完自动删除，不碰真实数据。
+自检会在 `backend\.attach-selfcheck\` / `backend\.qqbot-selfcheck\` / `backend\.env-selfcheck\` 建临时根，跑完自动删除，不碰真实数据。
 
 ### 查看实际使用的模型
 
@@ -367,3 +442,5 @@ Get-ChildItem "E:\hermes-agent-0.23.1\.hermes-home\sessions" -Directory |
 | 会话列表与消息 | `<HERMES_HOME>/state.db`（Hermes Gateway 管理） |
 | 附件文件与元数据 | `<HERMES_HOME>/sessions/<会话ID>/attachments/` |
 | 当前会话 ID | 浏览器 localStorage（`hermes.currentWs`） |
+| QQ 机器人凭据与白名单 | `<HERMES_HOME>/.env`（`QQ_*` / `QQBOT_HOME_CHANNEL`） |
+| QQ 机器人开关 | `<HERMES_HOME>/config.yaml` 的 `platforms.qqbot` |

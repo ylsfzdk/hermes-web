@@ -9,11 +9,13 @@
 <link rel="stylesheet" href="css/dialog.css">
 <link rel="stylesheet" href="css/key-dialog.css">
 <link rel="stylesheet" href="css/model-dialog.css">
+<link rel="stylesheet" href="css/qqbot.css">
 </head><body>
 
 <aside id="sidebar">
   <div id="sidebar-head">
     <button id="new-ws" type="button">新建会话</button>
+    <button id="bot-btn" type="button"><span>🤖</span><span>机器人</span><span class="bot-badge" id="bot-badge"></span></button>
   </div>
   <div id="ws-list"></div>
 
@@ -100,6 +102,85 @@
     <div id="model-btns" class="dialog-btns">
       <button id="model-confirm" class="btn-primary" type="button">确认</button>
       <button id="model-cancel" class="btn-ghost" type="button">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- QQ 机器人：独立弹窗，盖在聊天上面，关掉就回到原样的聊天页 -->
+<div id="bot-mask" class="mask">
+  <div id="bot-dialog" role="dialog" aria-modal="true" aria-labelledby="bot-dialog-title">
+    <header id="bot-dialog-head">
+      <h2 id="bot-dialog-title">🤖 QQ 机器人</h2>
+      <button id="bot-close" type="button" title="关闭" aria-label="关闭">×</button>
+    </header>
+
+    <div id="bot-dialog-body">
+      <div id="bot-cards">
+        <div class="bot-card">
+          <h3>1. 应用凭据</h3>
+          <div class="bot-row">
+            <a id="bot-qr-btn" class="btn-primary" href="https://q.qq.com/qqbot/#/"
+               target="_blank" rel="noreferrer">打开 QQ 开放平台 ↗</a>
+            <span class="bot-hint">去那里新建 / 打开机器人应用，复制 AppID 和 AppSecret 填到下面</span>
+          </div>
+          <label class="bot-label">AppID</label>
+          <input id="bot-app-id" type="text" autocomplete="off" placeholder="10201xxxx">
+          <label class="bot-label">AppSecret</label>
+          <input id="bot-secret" type="password" autocomplete="off" placeholder="留空则不修改">
+        </div>
+
+        <div class="bot-card">
+          <h3>2. 私聊授权</h3>
+          <div id="bot-authz"></div>
+          <label class="bot-label" id="bot-allowed-label">白名单 OpenID（逗号分隔）</label>
+          <input id="bot-allowed" type="text" autocomplete="off" placeholder="留空则不额外放行">
+          <label class="bot-label">群白名单 group_openid（逗号分隔，可留空）</label>
+          <input id="bot-group-allowed" type="text" autocomplete="off">
+          <label class="bot-label">home channel（cron / 通知的默认投递 OpenID，可留空）</label>
+          <input id="bot-home" type="text" autocomplete="off">
+        </div>
+
+        <div class="bot-card">
+          <h3>3. 开关</h3>
+          <label class="bot-check"><input id="bot-enabled" type="checkbox"> 启用 QQ 机器人</label>
+          <label class="bot-check"><input id="bot-markdown" type="checkbox"> Markdown 渲染</label>
+          <div class="bot-row">
+            <button id="bot-save" class="btn-primary" type="button">保存并重启网关</button>
+            <span id="bot-status" class="bot-hint"></span>
+          </div>
+        </div>
+
+        <div class="bot-card">
+          <h3>连接状态</h3>
+          <div id="bot-gw" class="bot-hint">读取中…</div>
+          <div id="bot-log" class="bot-log"></div>
+        </div>
+
+        <div class="bot-card">
+          <h3>照这个顺序走</h3>
+          <ol class="bot-steps">
+            <li>点上面的「打开 QQ 开放平台」，注册开发者并创建一个机器人应用。</li>
+            <li>在应用后台勾选权限：C2C 私聊消息、群聊 @ 消息、频道消息、交互按钮。</li>
+            <li>把应用的 AppID 和 AppSecret 复制回来，填进「1. 应用凭据」。</li>
+            <li>选私聊授权方式 → 勾「启用」→ 保存，网关自动重启并加载新凭据。</li>
+            <li>在 QQ 里私聊机器人发一句话测试；陌生人首次发消息会要求配对审批。</li>
+          </ol>
+          <div class="bot-faq" id="bot-faq">
+            <div class="faq-head">一直连不上</div>
+            <div class="faq-body">看上面的「连接状态」和日志里 <code>[QQBot:</code> 开头的行。</div>
+            <div class="faq-head">提示 app ID already in use</div>
+            <div class="faq-body">另一个网关进程占着同一个 AppID，先 <code>hermes gateway stop</code>。</div>
+            <div class="faq-head">收到消息没回复</div>
+            <div class="faq-body">检查私聊授权是不是拦掉了；群消息必须 @ 机器人。</div>
+            <div class="faq-head">AppSecret 从哪里复制</div>
+            <div class="faq-body">QQ 开放平台 → 选择应用 → 开发设置 →「机器人」页签里有 AppID / AppSecret。</div>
+            <div class="faq-head">还想用手机扫码配置</div>
+            <div class="faq-body">那要走 Hermes 官方的扫码向导：<code>hermes gateway setup</code>（选 QQ Bot）或在终端里跑 <code>hermes serve</code> 打开它的 Messaging 页。本页只做手填。</div>
+            <div class="faq-head">审批陌生人</div>
+            <div class="faq-body"><code>hermes pairing approve &lt;id&gt;</code>，id 会出现在对方的配对提示里。</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
